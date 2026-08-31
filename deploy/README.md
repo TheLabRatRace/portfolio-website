@@ -412,21 +412,43 @@ on 5003 and `/static/*` from `app/static`, and falls back to `index.html` for
 unknown paths -- the three things CloudFront does, so shell bugs surface before
 a deploy rather than after one.
 
-### The shell needs a domain
+### Getting the shell an API
 
-**This is the one thing that does not work in phase one.** The shell is served
-over https from CloudFront; the ECS task in phase one answers plain http on a
-public IP. A browser will not let an https page `fetch()` a plain-http URL, and
-CloudFront cannot be pointed at a bare IP either -- a custom origin has to be a
-DNS name. So there is no arrangement of phase-one pieces where the shell's
-fetches succeed.
+The shell is served over https from CloudFront. The ECS task answers plain http
+on a public IP. A browser will not let an https page `fetch()` a plain-http URL,
+and CloudFront cannot be pointed at a bare IP either -- a custom origin has to
+be a DNS name. So the shell needs *some* https hostname in front of the
+container, and the whole question is which one.
 
-`static.tf` already carries the fix: when `enable_cdn = true`, the static
-distribution gains a `/api/*` behaviour pointing at the task's hostname, which
-makes the shell's fetches same-origin https. That is phase two, and it needs
-the domain. Until then the shell renders its chrome and every fetch fails,
-which is why `enable_static_cdn` alone does not switch the site over to it --
-the containers keep serving the rendered HTML, and the shell sits in the bucket
+There are two, and `static.tf` takes whichever exists:
+
+**`enable_api_gateway = true` (no domain needed).** `apigw.tf` puts an API
+Gateway HTTP API in front of the task. API Gateway hands out
+`<api-id>.execute-api.<region>.amazonaws.com`, which is already valid for https
+and already a name CloudFront accepts as an origin. Reaching the task from
+there needs a name too, which is Cloud Map: ECS registers the task's private IP
+as an A record when the task starts and removes it when the task stops, and an
+API Gateway VPC link resolves and reaches that record from outside the VPC.
+Requests cost about a dollar per million; the VPC link is free on HTTP APIs.
+
+The first apply of this adds service discovery to the running ECS service, and
+service discovery registers a task as it *starts* -- the task already running
+is not in Cloud Map. Force a deployment afterwards or the API Gateway hop
+returns 503:
+
+```bash
+aws ecs update-service --region us-east-2 --cluster portfolio \
+  --service portfolio --force-new-deployment
+```
+
+**`enable_cdn = true` (phase two, needs the domain).** A Route 53 record
+tracking the task, plus an ACM certificate and a CloudFront alias. Cheaper per
+request, and it is what the site wants eventually anyway -- but set both and
+API Gateway still wins, so turn `enable_api_gateway` off once the domain is up.
+
+With neither, the shell renders its chrome and every fetch fails. That is why
+`enable_static_cdn` alone does not switch the site over to the shell -- the
+containers keep serving the rendered HTML, and the shell sits in the bucket
 unused.
 
 Worth saying plainly: moving the text out of the served HTML costs some SEO on

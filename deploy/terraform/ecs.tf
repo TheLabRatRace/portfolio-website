@@ -119,6 +119,26 @@ resource "aws_ecs_service" "app" {
     security_groups  = [aws_security_group.task.id]
   }
 
+  # Publish the task's private IP into Cloud Map, so API Gateway's VPC link has
+  # a name to resolve. ECS writes the record when the task starts and removes
+  # it when the task stops, which is the whole reason this is worth having --
+  # the address changes on every deploy.
+  #
+  # Attaching this to a running service is an in-place update, and it applies
+  # to tasks that start afterwards -- the task already running does not appear
+  # in Cloud Map. Force a deployment after the first apply.
+  dynamic "service_registries" {
+    for_each = var.enable_api_gateway ? [1] : []
+
+    content {
+      registry_arn = aws_service_discovery_service.app[0].arn
+      # Required by an SRV registration -- they are the host and the port it
+      # publishes. ECS reads the address off the task's own ENI.
+      container_name = "web"
+      container_port = local.container_port
+    }
+  }
+
   # Stop the old task before starting the new one. With one task and no load
   # balancer there is no way to overlap them usefully anyway -- ECS would tear
   # the old one down the instant the new one reported healthy, well before the

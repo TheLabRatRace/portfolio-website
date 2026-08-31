@@ -231,3 +231,23 @@ variable "static_base_url" {
   type        = string
   default     = ""
 }
+
+variable "enable_api_gateway" {
+  description = <<-EOT
+    Put an API Gateway HTTP API in front of the task, so the static shell has
+    an https API to call. This is the no-domain path: API Gateway's own
+    execute-api hostname is already valid for https, where the task itself is a
+    bare IP that CloudFront cannot use as an origin. Costs roughly $1 per
+    million requests; the VPC link it needs is free.
+
+    Follow the first apply with a forced deployment. Service discovery
+    registers a task as it starts, so the task already running is not in Cloud
+    Map and the API Gateway hop answers 503 until it is replaced.
+
+    Redundant once enable_cdn = true: a domain gives the task a hostname of its
+    own, and enable_cdn's Route 53 record is the cheaper origin. Set both and
+    this one still wins, so turn it off once the domain is in place.
+  EOT
+  type        = bool
+  default     = false
+}

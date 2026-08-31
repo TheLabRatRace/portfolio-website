@@ -35,6 +35,26 @@ locals {
 
   vpc_id     = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.public.ids
+
+  # Where CloudFront's /api/* behaviour sends requests, and whether that hop is
+  # encrypted. Two things can supply a hostname for the task -- the Route 53
+  # record enable_cdn creates, and the API Gateway endpoint enable_api_gateway
+  # creates -- and the shell only needs one of them to exist.
+  #
+  # join() rather than a conditional on purpose: Terraform evaluates both arms
+  # of a conditional, so indexing a resource that has no instances errors even
+  # in the arm that is not taken. A splat over an empty list is just "".
+  api_gateway_domain = join("", [
+    for id in aws_apigatewayv2_api.public[*].id :
+    "${id}.execute-api.${var.region}.amazonaws.com"
+  ])
+  origin_record_domain = join("", aws_route53_record.origin[*].fqdn)
+  api_origin_domain    = local.api_gateway_domain != "" ? local.api_gateway_domain : local.origin_record_domain
+
+  # Known at plan time, unlike api_origin_domain, which is an unknown attribute
+  # of a resource that has not been created yet. Anything that needs a count or
+  # a for_each has to use this one.
+  api_origin_enabled = var.enable_api_gateway || var.enable_cdn
 }
 
 data "aws_vpc" "default" {

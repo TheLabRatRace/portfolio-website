@@ -75,6 +75,16 @@ output "static_distribution_id" {
 }
 
 output "static_site_url" {
-  description = "Where the static shell answers. Its /api/* calls only work once enable_cdn = true gives the task a hostname."
+  description = "Where the static shell answers. Its /api/* calls need enable_api_gateway or enable_cdn to give the task a hostname."
   value       = var.enable_static_cdn ? "https://${one(aws_cloudfront_distribution.static[*].domain_name)}" : ""
+}
+
+output "api_endpoint" {
+  description = "API Gateway's own https address for the API. CloudFront's /api/* behaviour forwards here; useful for testing that hop on its own."
+  value       = one(aws_apigatewayv2_api.public[*].api_endpoint)
+}
+
+output "api_origin_domain" {
+  description = "The hostname CloudFront uses as the /api/* origin. Empty means the shell has no API and every fetch it makes will fail."
+  value       = local.api_origin_domain
 }
