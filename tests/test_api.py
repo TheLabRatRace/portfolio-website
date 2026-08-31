@@ -124,6 +124,16 @@ def test_search_groups_by_type(client, seeded):
     assert body["q"] == "visible"
 
 
+def test_search_reports_its_group_cap(client, seeded):
+    """The static shell shows a "see all" link on a group that came back full.
+    Without the cap in the response it would have to hardcode the number and
+    quietly stop offering the link the day the server's changed."""
+    from app.services.search import LIMIT
+
+    body = _json(client.get("/api/v1/search?q=visible"))
+    assert body["limit"] == LIMIT
+
+
 def test_a_one_letter_search_is_reported_not_ranked(client, seeded):
     body = _json(client.get("/api/v1/search?q=a"))
     assert body["too_short"] is True

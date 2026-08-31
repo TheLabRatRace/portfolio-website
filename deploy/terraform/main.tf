@@ -27,8 +27,10 @@ locals {
 
   # Where the two containers tell browsers to fetch CSS, JS and images from.
   # Empty means "from me", which is the correct answer when there is no bucket.
+  # The /static prefix is not cosmetic: the bucket root belongs to the static
+  # shell in static_site/, and sync_static.sh runs --delete on both halves.
   static_base_url = var.static_base_url != "" ? var.static_base_url : (
-    var.enable_static_cdn ? "https://${aws_cloudfront_distribution.static[0].domain_name}" : ""
+    var.enable_static_cdn ? "https://${aws_cloudfront_distribution.static[0].domain_name}/static" : ""
   )
 
   vpc_id     = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id

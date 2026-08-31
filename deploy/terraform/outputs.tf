@@ -73,3 +73,8 @@ output "static_distribution_id" {
   description = "Static-asset distribution. sync_static.sh invalidates this after a sync."
   value       = one(aws_cloudfront_distribution.static[*].id)
 }
+
+output "static_site_url" {
+  description = "Where the static shell answers. Its /api/* calls only work once enable_cdn = true gives the task a hostname."
+  value       = var.enable_static_cdn ? "https://${one(aws_cloudfront_distribution.static[*].domain_name)}" : ""
+}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeff Fredericks — Ops · Code · Automate</title>
+
+    <!-- This file is the whole site as far as S3 is concerned: every path the
+         distribution cannot find an object for is served from here, and the
+         router below reads the URL and asks the API for the content. The
+         server-rendered Flask app still serves the same pages at the same
+         paths -- this is a second front door onto one database, not a
+         replacement. Search engines get the rendered one. -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;0,800;1,700;1,800&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- __ASSET_V__ is replaced by sync_static.sh with a digest of the
+         stylesheet. Without it a returning visitor keeps the old CSS for as
+         long as its year-long max-age lasts. -->
+    <link rel="stylesheet" href="/static/css/style.min.css?v=__ASSET_V__">
+</head>
+<body>
+    <div class="grid-texture"></div>
+    <div class="ambient-glow"></div>
+
+    <nav class="site-nav">
+        <a href="/" class="nav-logo" data-link>
+            <span class="accent">Jeff</span>
+            <span class="nav-tagline">// ops · code · automate</span>
+        </a>
+        <button class="nav-toggle" type="button"
+                aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+            <a href="/" class="nav-btn" data-link data-section="home">home</a>
+            <a href="/projects" class="nav-btn" data-link data-section="projects">projects</a>
+            <a href="/blog" class="nav-btn" data-link data-section="blog">blog</a>
+            <a href="/contact" class="nav-btn" data-link data-section="contact">contact</a>
+
+            <form class="nav-search" role="search" action="/search" data-search>
+                <label class="visually-hidden" for="nav-search-input">Search the site</label>
+                <input id="nav-search-input" class="nav-search-input" type="search"
+                       name="q" placeholder="search" autocomplete="off" spellcheck="false">
+                <button class="nav-search-btn" type="submit" aria-label="Search">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                        <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                        <line x1="10.4" y1="10.4" x2="14" y2="14" stroke="currentColor"
+                              stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </nav>
+
+    <main>
+        <div class="page-content" id="view" aria-live="polite" aria-busy="true"></div>
+
+        <footer>
+            Built with intention · © 2026
+        </footer>
+    </main>
+
+    <!-- Written by sync_static.sh from a Terraform output. Loading it as a
+         separate file rather than baking the value in means the API can move
+         without rebuilding the shell. -->
+    <script src="/config.js?v=__ASSET_V__"></script>
+    <script src="/app.js?v=__ASSET_V__"></script>
+</body>
+</html>

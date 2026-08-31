@@ -26,7 +26,7 @@ from sqlalchemy.orm import joinedload, lazyload
 from app.blueprints.api import api_bp
 from app.blueprints.api import serializers as ser
 from app.models import Certification, GalleryImage, Post, Project, Skill, Tag
-from app.services.search import run_search
+from app.services.search import LIMIT, run_search
 
 # Matches the HTML listing pages, so a client paging the API and a visitor
 # paging the site see the same boundaries.
@@ -217,6 +217,10 @@ def search():
             "q": raw,
             "total": total,
             "too_short": too_short,
+            # How many rows a group can hold. A client showing a "see all"
+            # link needs it to tell a group of eight that happens to be
+            # complete from one that was cut off at eight.
+            "limit": LIMIT,
             "results": {
                 "work": [ser.project_summary(p) for p in results["work"]],
                 "sidequests": [ser.project_summary(p) for p in results["sidequests"]],

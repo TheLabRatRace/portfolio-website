@@ -358,9 +358,20 @@ Upload after any change to CSS, JS or images:
 bash deploy/scripts/sync_static.sh
 ```
 
-That rebuilds `style.min.css`, syncs the directory with `--delete`, and issues
-one `/*` invalidation. Run it **before** the deploy that ships the HTML pointing
-at the new files, never after -- assets first, then the page that asks for them.
+That rebuilds `style.min.css`, syncs both halves of the bucket, and issues one
+`/*` invalidation. Run it **before** the deploy that ships the HTML pointing at
+the new files, never after -- assets first, then the page that asks for them.
+
+The bucket holds two things, and the two `--delete` passes are kept apart on
+purpose:
+
+| Prefix | From | What it is |
+| --- | --- | --- |
+| `static/` | `app/static` | CSS, JS, images -- what the containers reference |
+| *(root)* | `static_site/` | the shell: `index.html` and its router |
+
+An unqualified `--delete` from either half would erase the other, so the asset
+passes are prefixed and the shell pass excludes `static/*`.
 
 Two things worth knowing about the caching:
 
@@ -379,6 +390,49 @@ bandwidth bill. It is also a *different* bucket from the assets bucket that
 holds uploads, and that is not tidiness: `sync_static.sh` runs `--delete`, and
 pointed at a bucket holding uploads it would delete content the repo has never
 seen.
+
+### The shell
+
+`static_site/` is the whole site as one HTML file and one 20 KB script. It
+fetches `/api/v1/...` and renders the same markup the Jinja templates emit --
+same stylesheet, same class names -- so the page looks identical while the
+container serves only JSON. `sync_static.sh` stamps `?v=` on its `<script>`
+tags with a digest of the shell plus the stylesheet, and uploads `index.html`
+with `no-cache`: it is the file that carries the version, so it cannot be the
+one that is cached.
+
+Preview it without uploading anything:
+
+```bash
+python3 tools/serve_shell.py
+```
+
+That serves the shell on <http://localhost:5010>, proxies `/api/*` to the app
+on 5003 and `/static/*` from `app/static`, and falls back to `index.html` for
+unknown paths -- the three things CloudFront does, so shell bugs surface before
+a deploy rather than after one.
+
+### The shell needs a domain
+
+**This is the one thing that does not work in phase one.** The shell is served
+over https from CloudFront; the ECS task in phase one answers plain http on a
+public IP. A browser will not let an https page `fetch()` a plain-http URL, and
+CloudFront cannot be pointed at a bare IP either -- a custom origin has to be a
+DNS name. So there is no arrangement of phase-one pieces where the shell's
+fetches succeed.
+
+`static.tf` already carries the fix: when `enable_cdn = true`, the static
+distribution gains a `/api/*` behaviour pointing at the task's hostname, which
+makes the shell's fetches same-origin https. That is phase two, and it needs
+the domain. Until then the shell renders its chrome and every fetch fails,
+which is why `enable_static_cdn` alone does not switch the site over to it --
+the containers keep serving the rendered HTML, and the shell sits in the bucket
+unused.
+
+Worth saying plainly: moving the text out of the served HTML costs some SEO on
+a portfolio, because a crawler that does not run JavaScript sees an empty
+`<div id="view">`. The API is shaped so a pre-render step can be added later
+without changing the shell.
 
 Cost is rounding error: ~20 MB of storage is about $0.0005/month, and
 CloudFront's perpetual free tier covers 1 TB out and 10M requests. The first
