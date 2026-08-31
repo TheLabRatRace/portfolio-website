@@ -11,8 +11,45 @@ except ImportError:
 BASE_DIR = Path(__file__).parent
 
 
+# Keys that are published, guessable, or simply absent. Flask signs the
+# session cookie with SECRET_KEY, so anyone holding it can mint a cookie that
+# says "logged in as user 1, is_admin" -- the admin login is then decorative.
+# This repository is public, which is what turns a committed default from a
+# bad habit into a working bypass.
+INSECURE_SECRET_KEYS = frozenset({
+    "",
+    "dev-secret-change-in-production",
+    "dev-only-never-in-production",
+    "change-me-to-a-long-random-string",
+    "change-me",
+    "secret",
+})
+
+
+def assert_secret_key_is_safe(config_name, secret_key):
+    """Refuse to start a production app on a key an attacker already knows.
+
+    Loud at boot rather than quiet forever: a weak key breaks nothing visible,
+    so nothing ever surfaces it. The one moment it can be caught is here.
+    """
+    if config_name != "production":
+        return
+    if (secret_key or "").strip() in INSECURE_SECRET_KEYS:
+        raise RuntimeError(
+            "SECRET_KEY is unset or is a known placeholder, and this is a "
+            "production config. Flask signs session cookies with it, so a "
+            "known value lets anyone forge an admin session without a "
+            "password. Generate one and put it in the environment:\n\n"
+            "    python3 -c \"import secrets; "
+            "print('SECRET_KEY=' + secrets.token_urlsafe(48))\" >> .env\n"
+        )
+
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+    # No fallback on purpose. A default here is a default in production, and
+    # this file is committed. Development and testing name their own below;
+    # production has to be given one or it will not boot.
+    SECRET_KEY = os.environ.get("SECRET_KEY", "")
     LOG_DIR = BASE_DIR / "logs"
     PORT = int(os.environ.get("PORT", 5002))
     SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -91,11 +128,15 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    # A fixed key so a restart does not sign you out mid-session. Safe only
+    # because production refuses to boot on it -- see assert_secret_key_is_safe.
+    SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-only-never-in-production"
 
 
 class TestingConfig(Config):
     TESTING = True
     DEBUG = False
+    SECRET_KEY = "testing-only-never-in-production"
     # Tests post forms without a browser to fetch a token first. The protection
     # is still exercised: one test turns it back on and asserts the rejection.
     WTF_CSRF_ENABLED = False
@@ -109,6 +150,9 @@ class TestingConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+    # SECRET_KEY is inherited from Config -- environment or nothing.
+    # create_app() calls assert_secret_key_is_safe() and refuses to build an
+    # app on a key that is empty or published.
 
 
 config = {
