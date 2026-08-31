@@ -13,7 +13,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../terraform"
 
 REGION="$(terraform output -raw region 2>/dev/null || echo "${AWS_REGION:-us-east-2}")"
 CLUSTER="$(terraform output -raw cluster_name)"
-SERVICE="$(terraform output -raw service_name)"
+# Optional argument: which service to ask about. Defaults to the public site;
+# admin_up.sh passes the admin service so there is one copy of this lookup.
+SERVICE="${1:-$(terraform output -raw service_name)}"
 PORT="$(terraform output -raw container_port 2>/dev/null || echo 5002)"
 
 TASK="$(aws ecs list-tasks \

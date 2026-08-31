@@ -6,7 +6,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, request
+from flask import Flask, request, url_for
 from flask.logging import default_handler
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -18,9 +18,21 @@ from config import (
 )
 
 
-def create_app(config_name="development"):
+# Which half of the site a process serves. The public container and the admin
+# container run the same image and differ only in this: the public one never
+# registers the admin blueprint, so /admin/* is a 404 there rather than a login
+# form waiting to be found. "all" is the local-development and test shape.
+ROLES = ("public", "admin", "all")
+
+
+def create_app(config_name="development", role=None):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+
+    role = role or app.config["APP_ROLE"]
+    if role not in ROLES:
+        raise ValueError(f"APP_ROLE must be one of {ROLES}, got {role!r}")
+    app.config["APP_ROLE"] = role
 
     # Before anything else: an app whose session cookies are forgeable has no
     # admin boundary at all, so it must not get as far as serving a request.
@@ -48,12 +60,13 @@ def create_app(config_name="development"):
     _register_template_filters(app)
     _register_image_variants(app)
     _register_asset_urls(app)
+    _register_static_urls(app)
     _register_stylesheet(app)
     _register_hooks(app)
     _register_context(app)
     _register_cli(app)
 
-    app.logger.info("App created with config: %s", config_name)
+    app.logger.info("App created with config: %s, role: %s", config_name, role)
     return app
 
 
@@ -181,29 +194,63 @@ def _setup_logging(app):
 
 
 def _register_blueprints(app):
-    from app.blueprints.admin import admin_bp
-    from app.blueprints.main import main_bp
-    from app.blueprints.blog import blog_bp
-    from app.blueprints.projects import projects_bp
-    from app.blueprints.search import search_bp
+    """Register only the blueprints this process's role is responsible for.
 
-    app.register_blueprint(main_bp)
-    app.register_blueprint(blog_bp, url_prefix="/blog")
-    app.register_blueprint(projects_bp, url_prefix="/projects")
-    app.register_blueprint(search_bp, url_prefix="/search")
-    app.register_blueprint(admin_bp, url_prefix="/admin")
+    The separation is the point, not a tidiness preference: a public container
+    that has never registered admin_bp cannot be talked into serving
+    /admin/login, however the request is dressed up. There is no decorator to
+    forget and no session check to get wrong, because the route does not exist.
+    """
+    role = app.config["APP_ROLE"]
+
+    if role in ("public", "all"):
+        from app.blueprints.api import api_bp
+        from app.blueprints.blog import blog_bp
+        from app.blueprints.main import main_bp
+        from app.blueprints.projects import projects_bp
+        from app.blueprints.search import search_bp
+
+        app.register_blueprint(main_bp)
+        app.register_blueprint(blog_bp, url_prefix="/blog")
+        app.register_blueprint(projects_bp, url_prefix="/projects")
+        app.register_blueprint(search_bp, url_prefix="/search")
+        # The JSON view of the same content. Public because the content is:
+        # every route is a GET and every query filters on published=True.
+        # Versioned in the path so a breaking change can ship as /api/v2
+        # while a cached shell still reads v1.
+        app.register_blueprint(api_bp, url_prefix="/api/v1")
+
+    if role in ("admin", "all"):
+        from app.blueprints.admin import admin_bp
+
+        app.register_blueprint(admin_bp, url_prefix="/admin")
 
 
 def _register_error_handlers(app):
-    from flask import render_template
+    from flask import jsonify, render_template
+
+    def _wants_json():
+        """An API caller gets a JSON body, not a page.
+
+        Keyed on the path rather than on Accept: a fetch() sends
+        Accept: */* by default, so content negotiation would hand a
+        JavaScript client an HTML error page it cannot read.
+        """
+        return request.path.startswith("/api/")
 
     @app.errorhandler(404)
     def not_found(error):
+        if _wants_json():
+            return jsonify({"error": "not_found", "path": request.path}), 404
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
     def server_error(error):
         app.logger.error("500 error: %s", error)
+        if _wants_json():
+            # No detail: the message is whatever raised, and that is a
+            # stack-shaped hint handed to an anonymous caller.
+            return jsonify({"error": "server_error"}), 500
         return render_template("errors/500.html"), 500
 
 
@@ -228,8 +275,6 @@ def _register_image_variants(app):
     artifact, so it is read once at startup. An image with no entry yields an
     empty string and the template's plain `src` still serves it.
     """
-    from flask import url_for
-
     manifest_path = Path(app.static_folder) / "images" / "variants.json"
     try:
         manifest = json.loads(manifest_path.read_text())
@@ -251,7 +296,7 @@ def _register_image_variants(app):
         for width in widths:
             # The widest candidate is the source; the tool never upscales.
             name = rel_path if width == source_width else f"{stem}-{width}w.{ext}"
-            url = url_for("static", filename="images/" + name)
+            url = app.extensions["static_url"]("images/" + name)
             parts.append(f"{url} {width}w")
         return ", ".join(parts)
 
@@ -272,6 +317,60 @@ def _register_asset_urls(app):
     app.logger.info("Asset storage: %s", app.config.get("S3_BUCKET") or "local")
 
 
+def _register_static_urls(app):
+    """One way to build a URL for a file in app/static.
+
+    Templates used to call url_for('static', ...) directly, which is right
+    while Flask serves those bytes. It no longer has to: STATIC_BASE_URL points
+    at the CloudFront distribution in front of the static bucket, and then the
+    container is out of the business of serving CSS entirely -- the request
+    never reaches it. Empty (local development, and any deploy without the
+    bucket) falls back to url_for and behaves exactly as before.
+
+    `cache_bust` appends a digest of the file's contents. It is on for the
+    build artifacts that change in place -- the stylesheet, the scripts --
+    because that digest is what makes a long max-age safe: without it a
+    returning visitor keeps yesterday's CSS for as long as the cache lives.
+    It is off for images, which get a new path when they change and would
+    otherwise cost a SHA-256 of every file on the page.
+    """
+    digests = {}
+
+    def digest_for(filename):
+        if filename not in digests:
+            path = Path(app.static_folder) / filename
+            try:
+                digests[filename] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+            except OSError:
+                # A missing file is a broken link either way; do not make it a
+                # 500 on a page that would otherwise render.
+                digests[filename] = ""
+        return digests[filename]
+
+    @app.template_global("static_url")
+    def static_url(filename, cache_bust=False):
+        filename = str(filename).lstrip("/")
+        version = digest_for(filename) if cache_bust else ""
+        # Read per call rather than captured at startup: the digests are worth
+        # caching because they cost a file read, the config lookup is a dict
+        # hit, and reading it late is what lets a test flip the base URL.
+        base = app.config["STATIC_BASE_URL"].rstrip("/")
+        if base:
+            return f"{base}/{filename}" + (f"?v={version}" if version else "")
+        if version:
+            return url_for("static", filename=filename, v=version)
+        return url_for("static", filename=filename)
+
+    # Also reachable from Python: app/services/storage.py builds image URLs
+    # and has no Jinja context to look a template global up in.
+    app.extensions["static_url"] = static_url
+
+    app.logger.info(
+        "Static assets: %s",
+        app.config["STATIC_BASE_URL"] or "served by this process",
+    )
+
+
 def _register_stylesheet(app):
     """Point every page at the minified stylesheet, fingerprinted.
 
@@ -279,12 +378,7 @@ def _register_stylesheet(app):
     the source, same 1670 rules. It is a build artifact, so a stale one is
     possible: when it is older than the file it came from the plain stylesheet
     is served instead. Bigger, never wrong.
-
-    The digest is what makes the one-day max-age on static safe. Without it a
-    returning visitor keeps yesterday's CSS for a day after a deploy.
     """
-    from flask import url_for
-
     css_dir = Path(app.static_folder) / "css"
     source, minified = css_dir / "style.css", css_dir / "style.min.css"
 
@@ -294,12 +388,13 @@ def _register_stylesheet(app):
             chosen = minified
         else:
             app.logger.warning("style.min.css is stale -- run tools/minify_css.py")
-    digest = hashlib.sha256(chosen.read_bytes()).hexdigest()[:8]
     app.logger.info("Stylesheet: %s (%d bytes)", chosen.name, chosen.stat().st_size)
+
+    static_url = app.jinja_env.globals["static_url"]
 
     @app.template_global("stylesheet_url")
     def stylesheet_url():
-        return url_for("static", filename=f"css/{chosen.name}", v=digest)
+        return static_url(f"css/{chosen.name}", cache_bust=True)
 
 
 def _register_cli(app):
@@ -319,6 +414,44 @@ def _register_context(app):
         if override is not None:
             show = override.lower() not in ("0", "false", "off", "no")
         return {"show_page_title": show}
+
+    @app.context_processor
+    def role_layout():
+        """The page skeleton for templates that both roles render.
+
+        errors/404.html and errors/500.html are the whole list: every other
+        template belongs to one role and names its own parent. Without this an
+        admin-only process would answer a 404 by rendering the public base,
+        which builds main.home -- a BuildError, so the 404 becomes a 500.
+        """
+        admin_only = app.config["APP_ROLE"] == "admin"
+        return {
+            "layout": "admin/_shell.html" if admin_only else "base.html",
+            # "Go home" on an error page means somewhere different in each
+            # process, and main.home is not an endpoint the admin app has.
+            "home_url": url_for("admin.dashboard" if admin_only else "main.home"),
+        }
+
+    @app.template_global()
+    def public_url(path=""):
+        """Absolute URL to a page on the public site.
+
+        The admin app runs on its own host and has never registered the public
+        blueprints, so url_for('projects.detail', ...) there is a BuildError,
+        not a link. This builds the same address from PUBLIC_SITE_URL instead.
+        Returns "" when no public site is configured, which the templates read
+        as "omit the link" rather than emitting a href to nowhere.
+        """
+        base = app.config["PUBLIC_SITE_URL"]
+        if base:
+            return f"{base}/{path.lstrip('/')}" if path else base
+        # No public site configured. Running both roles in one process -- local
+        # development, the test suite -- the public pages are right here, so a
+        # root-relative path is a working link. An admin-only process has
+        # nowhere to point, and returns "" so the template drops the link.
+        if app.config["APP_ROLE"] == "all":
+            return path if path.startswith("/") else f"/{path}"
+        return ""
 
 
 def _register_hooks(app):

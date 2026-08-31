@@ -14,6 +14,24 @@ locals {
 
   site_domain   = var.domain_name == "" ? "" : (var.subdomain == "" ? var.domain_name : "${var.subdomain}.${var.domain_name}")
   origin_domain = var.domain_name == "" ? "" : "${var.origin_subdomain}.${var.domain_name}"
+  # Where the admin app should point its "View ->" links. Explicit setting
+  # wins; otherwise the public site's own address, once there is a stable one.
+  # In phase one there is not: the public task's IP changes on every deploy,
+  # so this stays empty and the admin templates omit the links rather than
+  # linking somewhere that stopped being the site an hour ago.
+  public_site_url = var.public_site_url != "" ? var.public_site_url : (var.enable_cdn ? "https://${local.site_domain}" : "")
+
+  # The admin service is reached directly, always -- CloudFront fronts the
+  # public site only, and putting a login form behind a CDN buys nothing.
+  admin_cidrs = length(var.admin_allowed_cidrs) > 0 ? var.admin_allowed_cidrs : var.allowed_cidrs
+
+  # Where the two containers tell browsers to fetch CSS, JS and images from.
+  # Empty means "from me", which is the correct answer when there is no bucket.
+  # The /static prefix is not cosmetic: the bucket root belongs to the static
+  # shell in static_site/, and sync_static.sh runs --delete on both halves.
+  static_base_url = var.static_base_url != "" ? var.static_base_url : (
+    var.enable_static_cdn ? "https://${aws_cloudfront_distribution.static[0].domain_name}/static" : ""
+  )
 
   vpc_id     = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.public.ids

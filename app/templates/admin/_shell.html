@@ -1,0 +1,60 @@
+{# The admin app's own page skeleton.
+
+   This deliberately does not extend the public base.html. The admin container
+   never registers main/blog/projects/search, so every url_for in that file --
+   the logo, the four nav buttons, the search form -- would be a BuildError.
+   Standing alone is also the point of the split: admin ships as its own
+   service, and a change to the public nav has no way to break the editor.
+
+   What is shared is what should be: the same stylesheet, the same fonts, the
+   same texture and flash component. Only the navigation differs. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin — Jeff Fredericks{% endblock %}</title>
+    {# Admin pages are not for readers and must never reach an index. #}
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;0,800;1,700;1,800&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ stylesheet_url() }}">
+</head>
+<body>
+    <div class="grid-texture"></div>
+    <div class="ambient-glow"></div>
+
+    <nav class="site-nav">
+        {% set site = public_url() %}
+        {# The logo is a link back to the public site when there is one to link
+           to, and plain text when there is not -- an admin-only process with
+           no PUBLIC_SITE_URL set has no address for it. #}
+        {% if site %}
+        <a href="{{ site }}" class="nav-logo" rel="noopener">
+            <span class="accent">Jeff</span>
+            <span class="nav-tagline">// admin</span>
+        </a>
+        {% else %}
+        <span class="nav-logo">
+            <span class="accent">Jeff</span>
+            <span class="nav-tagline">// admin</span>
+        </span>
+        {% endif %}
+    </nav>
+
+    <main>
+        <div class="page-content">
+            {% include "components/_flash.html" %}
+            {% block content %}{% endblock %}
+        </div>
+
+        <footer>
+            Built with intention · © 2026
+        </footer>
+    </main>
+
+    <script src="{{ static_url('js/main.js', cache_bust=True) }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

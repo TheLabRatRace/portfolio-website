@@ -1,7 +1,7 @@
-{# Admin chrome. Extends the public base rather than standing alone, so there
-   is one set of fonts, tokens and nav. Everything admin-specific is the strip
-   of sub-navigation below. #}
-{% extends "base.html" %}
+{# Admin chrome: the signed-in editor's page. _shell.html is the skeleton --
+   see the note at the top of it for why admin no longer extends the public
+   base -- and everything below is the strip of sub-navigation. #}
+{% extends "admin/_shell.html" %}
 
 {% block content %}
 <div class="admin-page">

@@ -115,5 +115,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/contact.js') }}"></script>
+<script src="{{ static_url('js/contact.js', cache_bust=True) }}"></script>
 {% endblock %}

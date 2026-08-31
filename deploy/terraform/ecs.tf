@@ -46,6 +46,9 @@ resource "aws_ecs_task_definition" "app" {
 
     environment = [
       { name = "FLASK_ENV", value = "production" },
+      # The admin blueprint is not registered in this process. /admin/login on
+      # the public site is a 404 -- there is no such route here to find.
+      { name = "APP_ROLE", value = "public" },
       { name = "PORT", value = tostring(local.container_port) },
       # Both of these are statements about what is in front of the container,
       # and in phase one nothing is. A Secure cookie on a plain-http site is
@@ -57,6 +60,9 @@ resource "aws_ecs_task_definition" "app" {
       { name = "TRUSTED_PROXY_HOPS", value = var.enable_cdn ? "1" : "0" },
       # The container filesystem dies with the task; stdout is what is kept.
       { name = "LOG_TO_STDOUT", value = "1" },
+      # Empty until the static distribution exists, and then absolute URLs on
+      # every <link> and <script>. The bytes stop passing through this task.
+      { name = "STATIC_BASE_URL", value = local.static_base_url },
       { name = "S3_BUCKET", value = var.assets_bucket },
       { name = "S3_REGION", value = var.region },
       { name = "S3_PUBLIC_BASE_URL", value = var.assets_public_base_url },

@@ -20,7 +20,7 @@ import secrets
 from pathlib import Path
 from urllib.parse import quote
 
-from flask import current_app, url_for
+from flask import current_app
 
 from app.services.assets import AssetKeyError, category_for, safe_segment
 
@@ -171,7 +171,9 @@ def resolve(value):
     if not value:
         return ""
     if not is_s3_uri(value):
-        return url_for("static", filename="images/" + str(value).lstrip("/"))
+        # static_url, not url_for: when STATIC_BASE_URL is set these bytes come
+        # from the CDN in front of the static bucket, not from this process.
+        return current_app.extensions["static_url"]("images/" + str(value).lstrip("/"))
 
     key = key_of(value)
     base = current_app.config.get("S3_PUBLIC_BASE_URL")

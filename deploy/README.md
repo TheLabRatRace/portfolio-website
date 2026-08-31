@@ -282,6 +282,162 @@ variable and re-apply — it is not a rebuild.
 
 ---
 
+## The admin app
+
+Admin is a **separate ECS service**, running the same image with `APP_ROLE=admin`,
+scaled to zero.
+
+Two things follow, and both are the point:
+
+* **The public container has no `/admin` routes.** Not hidden behind a login —
+  absent. That process never registered the admin blueprint, so `/admin/login`
+  on the public site is a 404 from the URL map. There is no session check to
+  get wrong and no decorator to forget.
+* **The admin container is not running.** Most of the time the login form does
+  not exist anywhere on the internet. Bringing it up is a deliberate act.
+
+It has its own security group (`admin_allowed_cidrs`, falling back to
+`allowed_cidrs`) and its own opening on the database, so admin access can be
+revoked without touching the public site's.
+
+```bash
+bash deploy/scripts/admin_up.sh     # ~90 seconds, prints the URL
+# ... edit ...
+bash deploy/scripts/admin_down.sh   # back to zero
+```
+
+| | |
+|---|---|
+| Idle | **$0** — no task, no IP, nothing but log storage |
+| Running | ~$0.011/hour (0.25 vCPU ARM, 0.5 GB, plus the IPv4 hour) |
+| Cold start | 60–90 seconds: schedule, pull, boot, health check |
+
+`desired_count` on this service is under `ignore_changes`. It is operational
+state, not configuration — otherwise the next `terraform apply` would shut the
+admin down in the middle of an edit.
+
+**The address is new every time.** A Fargate task cannot hold an Elastic IP, so
+`admin_up.sh` prints the address it got rather than expecting you to know one.
+
+**There is no TLS in front of it, in either phase.** CloudFront fronts the
+public site only; putting a login form behind a CDN buys nothing. The password
+crosses the network in the clear — bring it up from a network you trust, and
+put it down afterwards. If that stops being acceptable, the fix is an ALB with
+ACM in front of this service (+$16.43/mo), not a CloudFront behavior.
+
+**"View →" links.** The admin app has no public blueprints, so it cannot build
+a link to a published page with `url_for`. It uses `PUBLIC_SITE_URL` instead,
+set from `public_site_url` — or derived from the site domain once the CDN is
+on. In phase one there is no stable public address to set (the task IP changes
+on every deploy), so it stays empty and the links are simply not rendered.
+
+**A shell in the admin task** — for `flask create-admin` and migrations:
+
+```bash
+aws ecs execute-command --cluster portfolio --task <task-arn> --container admin --interactive --command /bin/bash
+```
+
+---
+
+## Static assets
+
+CSS, JS and images are ~19 MB across ~2,000 files, and none of it is work a
+0.25 vCPU container should be doing. `enable_static_cdn` (on by default)
+creates a private S3 bucket and a CloudFront distribution in front of it, and
+sets `STATIC_BASE_URL` in both task definitions to the distribution's URL.
+
+With it set, every `<link>`, `<script>` and `<img>` on the page is an absolute
+URL at the edge and the origin never sees the request. With it empty -- locally,
+or with `enable_static_cdn = false` -- the same template calls fall back to
+`url_for('static', ...)` and Flask serves the bytes exactly as before. Nothing
+in the templates knows which one is happening.
+
+Upload after any change to CSS, JS or images:
+
+```bash
+bash deploy/scripts/sync_static.sh
+```
+
+That rebuilds `style.min.css`, syncs both halves of the bucket, and issues one
+`/*` invalidation. Run it **before** the deploy that ships the HTML pointing at
+the new files, never after -- assets first, then the page that asks for them.
+
+The bucket holds two things, and the two `--delete` passes are kept apart on
+purpose:
+
+| Prefix | From | What it is |
+| --- | --- | --- |
+| `static/` | `app/static` | CSS, JS, images -- what the containers reference |
+| *(root)* | `static_site/` | the shell: `index.html` and its router |
+
+An unqualified `--delete` from either half would erase the other, so the asset
+passes are prefixed and the shell pass excludes `static/*`.
+
+Two things worth knowing about the caching:
+
+- CSS and JS are requested with `?v=<sha256 prefix>` of their contents, so a
+  changed file is a URL no browser has seen and a one-year `max-age` is safe.
+  That digest does *not* protect CloudFront: the managed CachingOptimized
+  policy leaves query strings out of its cache key. The invalidation is what
+  covers the edge.
+- Images have no digest, so they get a week rather than a year. An invalidation
+  clears CloudFront but never reaches a browser that already has the file.
+
+The bucket is private -- reachable only through the distribution, by an origin
+access control scoped to that one distribution's ARN. There is no public URL
+that bypasses the cache, and nothing can be pulled straight out of S3 on your
+bandwidth bill. It is also a *different* bucket from the assets bucket that
+holds uploads, and that is not tidiness: `sync_static.sh` runs `--delete`, and
+pointed at a bucket holding uploads it would delete content the repo has never
+seen.
+
+### The shell
+
+`static_site/` is the whole site as one HTML file and one 20 KB script. It
+fetches `/api/v1/...` and renders the same markup the Jinja templates emit --
+same stylesheet, same class names -- so the page looks identical while the
+container serves only JSON. `sync_static.sh` stamps `?v=` on its `<script>`
+tags with a digest of the shell plus the stylesheet, and uploads `index.html`
+with `no-cache`: it is the file that carries the version, so it cannot be the
+one that is cached.
+
+Preview it without uploading anything:
+
+```bash
+python3 tools/serve_shell.py
+```
+
+That serves the shell on <http://localhost:5010>, proxies `/api/*` to the app
+on 5003 and `/static/*` from `app/static`, and falls back to `index.html` for
+unknown paths -- the three things CloudFront does, so shell bugs surface before
+a deploy rather than after one.
+
+### The shell needs a domain
+
+**This is the one thing that does not work in phase one.** The shell is served
+over https from CloudFront; the ECS task in phase one answers plain http on a
+public IP. A browser will not let an https page `fetch()` a plain-http URL, and
+CloudFront cannot be pointed at a bare IP either -- a custom origin has to be a
+DNS name. So there is no arrangement of phase-one pieces where the shell's
+fetches succeed.
+
+`static.tf` already carries the fix: when `enable_cdn = true`, the static
+distribution gains a `/api/*` behaviour pointing at the task's hostname, which
+makes the shell's fetches same-origin https. That is phase two, and it needs
+the domain. Until then the shell renders its chrome and every fetch fails,
+which is why `enable_static_cdn` alone does not switch the site over to it --
+the containers keep serving the rendered HTML, and the shell sits in the bucket
+unused.
+
+Worth saying plainly: moving the text out of the served HTML costs some SEO on
+a portfolio, because a crawler that does not run JavaScript sees an empty
+`<div id="view">`. The API is shaped so a pre-render step can be added later
+without changing the shell.
+
+Cost is rounding error: ~20 MB of storage is about $0.0005/month, and
+CloudFront's perpetual free tier covers 1 TB out and 10M requests. The first
+1,000 invalidation paths each month are free, and `/*` counts as one path.
+
 ## Afterwards
 
 **Ship a code change** — push and roll, Terraform not involved:

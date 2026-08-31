@@ -78,5 +78,14 @@ class Project(AssetPrefixMixin, db.Model):
         """
         return section_for_project(self.type) or "work"
 
+    @property
+    def public_path(self):
+        """Where this project lives on the public site, root-relative.
+
+        See Post.public_path: the admin app has no projects blueprint, so this
+        cannot come from url_for. test_public_paths pins it to the real route.
+        """
+        return f"/projects/{self.slug}"
+
     def __repr__(self):
         return f"<Project {self.slug}>"

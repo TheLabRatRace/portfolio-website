@@ -124,6 +124,39 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # ── Which half of the site this process serves ──
+    # "public" registers the site blueprints and no admin; "admin" registers
+    # the admin blueprint and nothing else; "all" is both, which is what local
+    # development and the test suite want. In AWS the two roles are two ECS
+    # services running the same image, so the public container has no /admin
+    # routes at all -- not hidden behind a login, absent.
+    # Where the CSS, JS and images in app/static are served from. Empty means
+    # this process serves them, which is what development wants and what any
+    # deploy without the bucket falls back to. Set it to the CloudFront domain
+    # and the container stops carrying that traffic entirely.
+    STATIC_BASE_URL = os.environ.get("STATIC_BASE_URL", "").rstrip("/")
+
+    APP_ROLE = os.environ.get("APP_ROLE", "all")
+
+    # Where the public site lives, as seen from the outside. The admin app runs
+    # on a different host from the public one, so it cannot build a link to a
+    # published page with url_for -- it has no public routes to build from.
+    # Empty means "no public site known", and the admin templates drop the
+    # outbound links rather than emitting a broken href.
+    PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").rstrip("/")
+
+    # ── Who may call the JSON API from a browser on another origin ──
+    # A comma-separated list of exact origins ("https://jeff.example"), not
+    # patterns. Empty means no cross-origin browser client, which is the right
+    # default while the site is server-rendered from the same host: the API is
+    # public and read-only, so a wildcard would be harmless today and exactly
+    # wrong the first time an endpoint here is neither.
+    API_CORS_ORIGINS = tuple(
+        origin.strip().rstrip("/")
+        for origin in os.environ.get("API_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    )
+
     # ── Session cookie ──
     # SameSite=Lax is what actually stops a cross-site POST from riding the
     # admin's session; the CSRF token is the second lock, not the first.
@@ -219,6 +252,16 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = False
     SECRET_KEY = "testing-only-never-in-production"
+
+    # Pinned, not inherited: the suite covers both halves of the site, and a
+    # developer shelling into the admin container with APP_ROLE=admin exported
+    # would otherwise watch every public test 404. Tests that want one role in
+    # isolation pass role= to create_app.
+    APP_ROLE = "all"
+
+    # Same reasoning: tests assert on the URLs templates emit, and an exported
+    # STATIC_BASE_URL would rewrite every one of them.
+    STATIC_BASE_URL = ""
 
     # Its own variable, deliberately not DATABASE_URL. That one now names RDS
     # by default, and the suite must never be one stray `pytest` away from

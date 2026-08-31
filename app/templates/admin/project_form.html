@@ -7,9 +7,13 @@
     <h3 class="admin-section-title">
         {{ project.title if project else ('New ' + ('work project' if kind == 'work' else 'side quest')) }}
     </h3>
-    {% if project %}
+    {# Absolute, via public_url: admin runs on its own host and has no
+       projects blueprint to build a url_for against. Empty when no public
+       site is configured, in which case there is no link to show. #}
+    {% set view_url = public_url(project.public_path) if project else '' %}
+    {% if view_url %}
     <a class="admin-btn admin-btn-quiet" target="_blank" rel="noopener"
-       href="{{ url_for('projects.detail', slug=project.slug) }}">View →</a>
+       href="{{ view_url }}">View →</a>
     {% endif %}
 </div>
 

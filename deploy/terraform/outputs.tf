@@ -49,3 +49,32 @@ output "log_group" {
 output "region" {
   value = var.region
 }
+
+output "admin_service_name" {
+  description = "ECS service for the admin app. Scaled to zero until you raise it."
+  value       = aws_ecs_service.admin.name
+}
+
+output "admin_security_group_id" {
+  value = aws_security_group.admin.id
+}
+
+output "static_bucket" {
+  description = "Bucket holding the site's CSS, JS and images. sync_static.sh writes here."
+  value       = one(aws_s3_bucket.static[*].bucket)
+}
+
+output "static_base_url" {
+  description = "What STATIC_BASE_URL is set to in both task definitions."
+  value       = local.static_base_url
+}
+
+output "static_distribution_id" {
+  description = "Static-asset distribution. sync_static.sh invalidates this after a sync."
+  value       = one(aws_cloudfront_distribution.static[*].id)
+}
+
+output "static_site_url" {
+  description = "Where the static shell answers. Its /api/* calls only work once enable_cdn = true gives the task a hostname."
+  value       = var.enable_static_cdn ? "https://${one(aws_cloudfront_distribution.static[*].domain_name)}" : ""
+}
