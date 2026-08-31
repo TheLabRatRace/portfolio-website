@@ -13,10 +13,27 @@ The index is the generated `search_vector` column on each of those tables
 
 from flask import render_template, request
 from sqlalchemy import func, or_
+from sqlalchemy.orm import joinedload, lazyload
 
 from app.blueprints.search import search_bp
 from app.extensions import db
 from app.models import GalleryImage, Post, Project, Tag
+
+# Project and Post load their relationships eagerly (lazy="selectin"), which is
+# a round trip apiece on every query that touches them -- and this page runs
+# five. Against a database on the far side of a WAN link those trips are the
+# entire cost of the page, so each query below asks for exactly what
+# search/results.html renders and refuses the rest.
+# lazyload rather than noload throughout: noload does not merely skip a load,
+# it blanks the collection on an instance that may already have it, which is a
+# silently wrong page. lazyload costs the same nothing when the attribute is
+# never touched, and if one ever is, the symptom is a slow page instead.
+_PROJECT_RESULT = (
+    # results.html shows item.title, .slug, .description and .tags.
+    joinedload(Project._tags),
+    lazyload(Project.gallery_images),
+    lazyload(Project.attachments),
+)
 
 # Per type, per page. Search is a way into the site, not a second index of
 # it -- someone who wants all 63 gallery images wants the gallery tab.
@@ -56,6 +73,7 @@ def index():
             rank = _rank(Project.search_vector, tsq)
             return (
                 Project.query
+                .options(*_PROJECT_RESULT)
                 .filter(
                     Project.type == kind,
                     Project.published.is_(True),
@@ -73,6 +91,23 @@ def index():
         results["gallery"] = (
             GalleryImage.query
             .join(Project)
+            # _gallery_card.html links back through img.project, and the join
+            # above does not populate the relationship -- without this each
+            # card on screen is its own round trip. It needs only slug and
+            # title, so the project arrives without its own collections.
+            # lazyload, not noload: a project can be both a gallery hit's
+            # owner and a search hit in its own right, and noload does not
+            # merely skip the load -- it blanks the collection on an instance
+            # that already has it, so the same project's tags vanish from the
+            # results above. lazyload leaves a loaded collection alone and
+            # never fires for the two columns the card actually reads.
+            .options(
+                joinedload(GalleryImage.project).options(
+                    lazyload(Project._tags),
+                    lazyload(Project.gallery_images),
+                    lazyload(Project.attachments),
+                )
+            )
             .filter(
                 Project.published.is_(True),
                 GalleryImage.search_vector.op("@@")(tsq),
@@ -85,6 +120,8 @@ def index():
         post_rank = _rank(Post.search_vector, tsq)
         results["posts"] = (
             Post.query
+            # results.html shows title, slug, excerpt and date, not tags.
+            .options(lazyload(Post._tags))
             .filter(Post.published.is_(True), Post.search_vector.op("@@")(tsq))
             .order_by(post_rank.desc(), Post.id.desc())
             .limit(LIMIT)
