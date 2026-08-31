@@ -4,12 +4,20 @@
    `label` names the nav -- a tab renders this twice, and two <nav>s both
    announcing "Pagination" are indistinguishable to a screen reader.
 
+   Optional `tab_name` is the tab this control belongs to, and it is folded
+   into every link here. It has to be: these hrefs are built server-side at
+   render time, but the tab can also be switched client-side afterwards
+   (projects.js replaceStates the address bar). A pager that set only its page
+   number would emit a URL with no tab in it at all, and the server would
+   answer with the default tab -- so paging the gallery bounced you to Work.
+
    Prev/Next split the arrow and the word into separate spans so a tight host
    can drop the word; aria-label carries the meaning either way. #}
+{% set tab_args = {'tab': tab_name} if tab_name is defined and tab_name else {} %}
 {% if pagination.pages > 1 %}
 <nav class="pagination" aria-label="{{ label|default('Pagination', true) }}">
     {% if pagination.has_prev %}
-    <a class="page-btn page-btn--step" href="{{ page_url(**{param: pagination.prev_num}) }}"
+    <a class="page-btn page-btn--step" href="{{ page_url(**dict(tab_args, **{param: pagination.prev_num})) }}"
        rel="prev" aria-label="Previous page"><span class="page-arrow">←</span><span class="page-word">Prev</span></a>
     {% else %}
     <span class="page-btn page-btn--step disabled" aria-disabled="true"
@@ -21,7 +29,7 @@
             {% if p == pagination.page %}
             <span class="page-btn active" aria-current="page">{{ p }}</span>
             {% else %}
-            <a class="page-btn" href="{{ page_url(**{param: p}) }}">{{ p }}</a>
+            <a class="page-btn" href="{{ page_url(**dict(tab_args, **{param: p})) }}">{{ p }}</a>
             {% endif %}
         {% else %}
         <span class="page-gap">…</span>
@@ -34,7 +42,7 @@
     <span class="page-pos">{{ pagination.page }} / {{ pagination.pages }}</span>
 
     {% if pagination.has_next %}
-    <a class="page-btn page-btn--step" href="{{ page_url(**{param: pagination.next_num}) }}"
+    <a class="page-btn page-btn--step" href="{{ page_url(**dict(tab_args, **{param: pagination.next_num})) }}"
        rel="next" aria-label="Next page"><span class="page-word">Next</span><span class="page-arrow">→</span></a>
     {% else %}
     <span class="page-btn page-btn--step disabled" aria-disabled="true"
