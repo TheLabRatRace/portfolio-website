@@ -49,3 +49,12 @@ output "log_group" {
 output "region" {
   value = var.region
 }
+
+output "admin_service_name" {
+  description = "ECS service for the admin app. Scaled to zero until you raise it."
+  value       = aws_ecs_service.admin.name
+}
+
+output "admin_security_group_id" {
+  value = aws_security_group.admin.id
+}

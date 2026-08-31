@@ -282,6 +282,63 @@ variable and re-apply — it is not a rebuild.
 
 ---
 
+## The admin app
+
+Admin is a **separate ECS service**, running the same image with `APP_ROLE=admin`,
+scaled to zero.
+
+Two things follow, and both are the point:
+
+* **The public container has no `/admin` routes.** Not hidden behind a login —
+  absent. That process never registered the admin blueprint, so `/admin/login`
+  on the public site is a 404 from the URL map. There is no session check to
+  get wrong and no decorator to forget.
+* **The admin container is not running.** Most of the time the login form does
+  not exist anywhere on the internet. Bringing it up is a deliberate act.
+
+It has its own security group (`admin_allowed_cidrs`, falling back to
+`allowed_cidrs`) and its own opening on the database, so admin access can be
+revoked without touching the public site's.
+
+```bash
+bash deploy/scripts/admin_up.sh     # ~90 seconds, prints the URL
+# ... edit ...
+bash deploy/scripts/admin_down.sh   # back to zero
+```
+
+| | |
+|---|---|
+| Idle | **$0** — no task, no IP, nothing but log storage |
+| Running | ~$0.011/hour (0.25 vCPU ARM, 0.5 GB, plus the IPv4 hour) |
+| Cold start | 60–90 seconds: schedule, pull, boot, health check |
+
+`desired_count` on this service is under `ignore_changes`. It is operational
+state, not configuration — otherwise the next `terraform apply` would shut the
+admin down in the middle of an edit.
+
+**The address is new every time.** A Fargate task cannot hold an Elastic IP, so
+`admin_up.sh` prints the address it got rather than expecting you to know one.
+
+**There is no TLS in front of it, in either phase.** CloudFront fronts the
+public site only; putting a login form behind a CDN buys nothing. The password
+crosses the network in the clear — bring it up from a network you trust, and
+put it down afterwards. If that stops being acceptable, the fix is an ALB with
+ACM in front of this service (+$16.43/mo), not a CloudFront behavior.
+
+**"View →" links.** The admin app has no public blueprints, so it cannot build
+a link to a published page with `url_for`. It uses `PUBLIC_SITE_URL` instead,
+set from `public_site_url` — or derived from the site domain once the CDN is
+on. In phase one there is no stable public address to set (the task IP changes
+on every deploy), so it stays empty and the links are simply not rendered.
+
+**A shell in the admin task** — for `flask create-admin` and migrations:
+
+```bash
+aws ecs execute-command --cluster portfolio --task <task-arn> --container admin --interactive --command /bin/bash
+```
+
+---
+
 ## Afterwards
 
 **Ship a code change** — push and roll, Terraform not involved:

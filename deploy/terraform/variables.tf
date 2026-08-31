@@ -161,3 +161,40 @@ variable "price_class" {
   type        = string
   default     = "PriceClass_100"
 }
+
+variable "admin_allowed_cidrs" {
+  description = <<-EOT
+    Who may reach the admin container, as CIDRs. Empty falls back to
+    allowed_cidrs. This is the only thing standing in front of the login form
+    -- keep it to the address you actually administer from, never 0.0.0.0/0.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.admin_allowed_cidrs, "0.0.0.0/0")
+    error_message = "Refusing 0.0.0.0/0 on the admin service. Name your own address."
+  }
+}
+
+variable "admin_task_cpu" {
+  description = "CPU units for the admin task. It serves one person."
+  type        = string
+  default     = "256"
+}
+
+variable "admin_task_memory" {
+  description = "Memory (MiB) for the admin task."
+  type        = string
+  default     = "512"
+}
+
+variable "public_site_url" {
+  description = <<-EOT
+    Absolute URL of the public site, for the admin app's "View ->" links.
+    Empty and no CDN means there is no stable public address yet (a phase-one
+    task IP changes on every deploy), and the admin app omits those links.
+  EOT
+  type        = string
+  default     = ""
+}

@@ -6,7 +6,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, request
+from flask import Flask, request, url_for
 from flask.logging import default_handler
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -18,9 +18,21 @@ from config import (
 )
 
 
-def create_app(config_name="development"):
+# Which half of the site a process serves. The public container and the admin
+# container run the same image and differ only in this: the public one never
+# registers the admin blueprint, so /admin/* is a 404 there rather than a login
+# form waiting to be found. "all" is the local-development and test shape.
+ROLES = ("public", "admin", "all")
+
+
+def create_app(config_name="development", role=None):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+
+    role = role or app.config["APP_ROLE"]
+    if role not in ROLES:
+        raise ValueError(f"APP_ROLE must be one of {ROLES}, got {role!r}")
+    app.config["APP_ROLE"] = role
 
     # Before anything else: an app whose session cookies are forgeable has no
     # admin boundary at all, so it must not get as far as serving a request.
@@ -53,7 +65,7 @@ def create_app(config_name="development"):
     _register_context(app)
     _register_cli(app)
 
-    app.logger.info("App created with config: %s", config_name)
+    app.logger.info("App created with config: %s, role: %s", config_name, role)
     return app
 
 
@@ -181,17 +193,30 @@ def _setup_logging(app):
 
 
 def _register_blueprints(app):
-    from app.blueprints.admin import admin_bp
-    from app.blueprints.main import main_bp
-    from app.blueprints.blog import blog_bp
-    from app.blueprints.projects import projects_bp
-    from app.blueprints.search import search_bp
+    """Register only the blueprints this process's role is responsible for.
 
-    app.register_blueprint(main_bp)
-    app.register_blueprint(blog_bp, url_prefix="/blog")
-    app.register_blueprint(projects_bp, url_prefix="/projects")
-    app.register_blueprint(search_bp, url_prefix="/search")
-    app.register_blueprint(admin_bp, url_prefix="/admin")
+    The separation is the point, not a tidiness preference: a public container
+    that has never registered admin_bp cannot be talked into serving
+    /admin/login, however the request is dressed up. There is no decorator to
+    forget and no session check to get wrong, because the route does not exist.
+    """
+    role = app.config["APP_ROLE"]
+
+    if role in ("public", "all"):
+        from app.blueprints.blog import blog_bp
+        from app.blueprints.main import main_bp
+        from app.blueprints.projects import projects_bp
+        from app.blueprints.search import search_bp
+
+        app.register_blueprint(main_bp)
+        app.register_blueprint(blog_bp, url_prefix="/blog")
+        app.register_blueprint(projects_bp, url_prefix="/projects")
+        app.register_blueprint(search_bp, url_prefix="/search")
+
+    if role in ("admin", "all"):
+        from app.blueprints.admin import admin_bp
+
+        app.register_blueprint(admin_bp, url_prefix="/admin")
 
 
 def _register_error_handlers(app):
@@ -319,6 +344,44 @@ def _register_context(app):
         if override is not None:
             show = override.lower() not in ("0", "false", "off", "no")
         return {"show_page_title": show}
+
+    @app.context_processor
+    def role_layout():
+        """The page skeleton for templates that both roles render.
+
+        errors/404.html and errors/500.html are the whole list: every other
+        template belongs to one role and names its own parent. Without this an
+        admin-only process would answer a 404 by rendering the public base,
+        which builds main.home -- a BuildError, so the 404 becomes a 500.
+        """
+        admin_only = app.config["APP_ROLE"] == "admin"
+        return {
+            "layout": "admin/_shell.html" if admin_only else "base.html",
+            # "Go home" on an error page means somewhere different in each
+            # process, and main.home is not an endpoint the admin app has.
+            "home_url": url_for("admin.dashboard" if admin_only else "main.home"),
+        }
+
+    @app.template_global()
+    def public_url(path=""):
+        """Absolute URL to a page on the public site.
+
+        The admin app runs on its own host and has never registered the public
+        blueprints, so url_for('projects.detail', ...) there is a BuildError,
+        not a link. This builds the same address from PUBLIC_SITE_URL instead.
+        Returns "" when no public site is configured, which the templates read
+        as "omit the link" rather than emitting a href to nowhere.
+        """
+        base = app.config["PUBLIC_SITE_URL"]
+        if base:
+            return f"{base}/{path.lstrip('/')}" if path else base
+        # No public site configured. Running both roles in one process -- local
+        # development, the test suite -- the public pages are right here, so a
+        # root-relative path is a working link. An admin-only process has
+        # nowhere to point, and returns "" so the template drops the link.
+        if app.config["APP_ROLE"] == "all":
+            return path if path.startswith("/") else f"/{path}"
+        return ""
 
 
 def _register_hooks(app):

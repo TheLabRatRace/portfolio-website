@@ -51,5 +51,16 @@ class Post(AssetPrefixMixin, db.Model):
         """
         return self.date
 
+    @property
+    def public_path(self):
+        """Where this post lives on the public site, as a root-relative path.
+
+        Spelled out here rather than built with url_for because the admin app
+        does not register the blog blueprint -- it has no such endpoint to
+        build from. test_public_paths asserts this stays equal to what
+        url_for produces, so the two cannot drift apart quietly.
+        """
+        return f"/blog/{self.slug}"
+
     def __repr__(self):
         return f"<Post {self.slug}>"

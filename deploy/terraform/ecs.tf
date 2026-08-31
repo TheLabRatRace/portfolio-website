@@ -46,6 +46,9 @@ resource "aws_ecs_task_definition" "app" {
 
     environment = [
       { name = "FLASK_ENV", value = "production" },
+      # The admin blueprint is not registered in this process. /admin/login on
+      # the public site is a 404 -- there is no such route here to find.
+      { name = "APP_ROLE", value = "public" },
       { name = "PORT", value = tostring(local.container_port) },
       # Both of these are statements about what is in front of the container,
       # and in phase one nothing is. A Secure cookie on a plain-http site is

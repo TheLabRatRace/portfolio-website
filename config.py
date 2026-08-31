@@ -124,6 +124,21 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # ── Which half of the site this process serves ──
+    # "public" registers the site blueprints and no admin; "admin" registers
+    # the admin blueprint and nothing else; "all" is both, which is what local
+    # development and the test suite want. In AWS the two roles are two ECS
+    # services running the same image, so the public container has no /admin
+    # routes at all -- not hidden behind a login, absent.
+    APP_ROLE = os.environ.get("APP_ROLE", "all")
+
+    # Where the public site lives, as seen from the outside. The admin app runs
+    # on a different host from the public one, so it cannot build a link to a
+    # published page with url_for -- it has no public routes to build from.
+    # Empty means "no public site known", and the admin templates drop the
+    # outbound links rather than emitting a broken href.
+    PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").rstrip("/")
+
     # ── Session cookie ──
     # SameSite=Lax is what actually stops a cross-site POST from riding the
     # admin's session; the CSRF token is the second lock, not the first.
@@ -219,6 +234,12 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = False
     SECRET_KEY = "testing-only-never-in-production"
+
+    # Pinned, not inherited: the suite covers both halves of the site, and a
+    # developer shelling into the admin container with APP_ROLE=admin exported
+    # would otherwise watch every public test 404. Tests that want one role in
+    # isolation pass role= to create_app.
+    APP_ROLE = "all"
 
     # Its own variable, deliberately not DATABASE_URL. That one now names RDS
     # by default, and the suite must never be one stray `pytest` away from

@@ -5,9 +5,11 @@
 {% block admin_content %}
 <div class="admin-list-head">
     <h3 class="admin-section-title">{{ post.title if post else 'New post' }}</h3>
-    {% if post and post.published %}
+    {# See project_form.html: absolute, because admin has no blog blueprint. #}
+    {% set view_url = public_url(post.public_path) if post and post.published else '' %}
+    {% if view_url %}
     <a class="admin-btn admin-btn-quiet" target="_blank" rel="noopener"
-       href="{{ url_for('blog.detail', slug=post.slug) }}">View →</a>
+       href="{{ view_url }}">View →</a>
     {% endif %}
 </div>
 
