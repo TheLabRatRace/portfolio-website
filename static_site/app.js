@@ -39,9 +39,58 @@
   }
 
   function render(html) {
+    listKey = null;
     view.innerHTML = html;
     view.setAttribute("aria-busy", "false");
+    /* <main> is the scroller, not the window -- style.css gives it height:100dvh
+     * and overflow-y:auto, so window.scrollTo alone does nothing and a view
+     * navigated to from halfway down a long page opens halfway down. That also
+     * strands the reveal below: anything already above the viewport never
+     * intersects, so it never gets .visible and stays invisible for good. */
+    var scroller = document.querySelector("main");
+    if (scroller) scroller.scrollTop = 0;
     window.scrollTo(0, 0);
+    reveal();
+  }
+
+  /* .fade-in and .terminal-line are both opacity:0 in style.css and wait for a
+   * .visible class. The rendered site adds it from app/static/js/main.js, which
+   * this shell does not load -- so without this the home page's terminal block
+   * is a gold rule with nothing beside it: the markup is there, the text never
+   * appears. Same failure for the status card and every fade-in wrapper.
+   *
+   * The reveal is main.js's, kept deliberately identical: staggered by position
+   * within the batch that came into view, capped so nothing waits long. The
+   * observer is rebuilt per render rather than created once, because every view
+   * replaces the elements it was watching. */
+  var REVEAL_STEP = 0.04;  // seconds between neighbours
+  var REVEAL_CAP = 0.2;    // longest any one element waits
+
+  function reveal() {
+    var animated = view.querySelectorAll(".fade-in, .terminal-line");
+    if (!animated.length) return;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        !("IntersectionObserver" in window)) {
+      animated.forEach(function (el) { el.classList.add("visible"); });
+      return;
+    }
+
+    var observer = new IntersectionObserver(function (entries, obs) {
+      entries
+        .filter(function (entry) { return entry.isIntersecting; })
+        .sort(function (a, b) {
+          return a.boundingClientRect.top - b.boundingClientRect.top;
+        })
+        .forEach(function (entry, i) {
+          entry.target.style.transitionDelay =
+            Math.min(i * REVEAL_STEP, REVEAL_CAP) + "s";
+          entry.target.classList.add("visible");
+          obs.unobserve(entry.target);
+        });
+    }, { rootMargin: "120px 0px 160px 0px", threshold: 0.01 });
+
+    animated.forEach(function (el) { observer.observe(el); });
   }
 
   function loading() {
@@ -71,9 +120,9 @@
     );
   }
 
-  function heading(text) {
-    return '<div class="section-heading"><h2>' + esc(text) +
-      '</h2><div class="section-heading-bar"></div></div>';
+  function heading(text, extra) {
+    return '<div class="section-heading' + (extra ? " " + extra : "") + '"><h2>' +
+      esc(text) + '</h2><div class="section-heading-bar"></div></div>';
   }
 
   function chips(list, className, limit) {
@@ -101,11 +150,34 @@
     return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear();
   }
 
-  var EXT_ICON =
-    '<svg class="ext-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"' +
-    ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"' +
-    ' stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/>' +
-    '<path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+  /* The lucide-shaped icons the templates draw inline. Same 24-unit viewBox and
+   * the same stroke settings everywhere, so only the paths and the size differ. */
+  function icon(paths, size, className) {
+    return '<svg' + (className ? ' class="' + className + '"' : "") +
+      ' xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '"' +
+      ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"' +
+      ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      paths + "</svg>";
+  }
+
+  var EXT_PATHS =
+    '<path d="M15 3h6v6"/><path d="M10 14 21 3"/>' +
+    '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>';
+
+  var DOWNLOAD_PATHS =
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+    '<polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>';
+
+  var GALLERY_PATHS =
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/>' +
+    '<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>';
+
+  var DOCUMENT_PATHS =
+    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>' +
+    '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/>' +
+    '<path d="M16 17H8"/>';
+
+  var EXT_ICON = icon(EXT_PATHS, 16, "ext-link-icon");
 
   var IMAGE_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"' +
@@ -155,7 +227,7 @@
     return (
       '<div class="project-row-wrap" data-category="' + esc(project.category) + '">' +
       '<a class="project-row cat-' + esc(project.category) + '" data-link href="/projects/' +
-      encodeURIComponent(project.slug) + '">' +
+      encodeURIComponent(project.slug) + '" data-slug="' + esc(project.slug) + '">' +
       '<div class="project-row-left"><span class="card-dot"></span>' +
       '<div class="project-row-text">' +
       '<h3 class="project-row-title">' + esc(project.title) + "</h3>" +
@@ -169,7 +241,8 @@
   function questRow(quest) {
     return (
       '<div class="quest-row-wrap">' +
-      '<a class="quest-row" data-link href="/projects/' + encodeURIComponent(quest.slug) + '">' +
+      '<a class="quest-row" data-link href="/projects/' + encodeURIComponent(quest.slug) +
+      '" data-slug="' + esc(quest.slug) + '">' +
       '<div class="quest-row-left"><span class="status-dot ' + esc(quest.status) + '"></span>' +
       '<h3 class="quest-row-title">' + esc(quest.title) + "</h3>" +
       '<span class="quest-status-label ' + esc(quest.status) + '">' +
@@ -200,6 +273,31 @@
 
   // ── views ─────────────────────────────────────────────────────────────────
 
+  /* The bio, the photo frame and the status card are copy in the rendered
+   * page's own template -- app/templates/components/_about_content.html -- and
+   * not rows the API serves, so they are copy here too. Same wording and the
+   * same order; if that file changes, this changes with it. */
+  var BIO = [
+    "I work in technical operations for a television and streaming production " +
+    "company, managing infrastructure across AWS, on-prem networking, and " +
+    "monitoring platforms. My days involve Splunk pipelines, Cisco switches, " +
+    "and keeping production systems running smoothly.",
+    "Outside of work, I run a Proxmox homelab that's become a full R&amp;D " +
+    "environment — from self-hosted AI inference to network monitoring " +
+    "experiments. I'm actively pursuing CCNA and CCNP Enterprise certifications."
+  ];
+
+  var STATUS = [
+    ["Role:", "Technical Operations Engineer"],
+    ["Cloud:", "AWS (EC2, S3, IAM, Lambda, RDS)"],
+    ["Certs:", "CCNA / CCNP (in progress)"],
+    ["Stack:", "Splunk · Grafana · Docker · Terraform"],
+    ["Languages:", "Python, Java, Bash"],
+    ["Networking:", "Cisco IOS · Palo Alto"],
+    ["Platforms:", "Linux · Proxmox · Windows"],
+    ["CI/CD:", "GitLab · OIDC · Terragrunt"]
+  ];
+
   function home() {
     return get("/home").then(function (data) {
       var groups = {};
@@ -227,26 +325,44 @@
         );
       }).join("");
 
+      var status = STATUS.map(function (row) {
+        return '<div class="terminal-line"><span class="prefix">#</span>' +
+          '<span class="accent">' + row[0] + "</span> " + esc(row[1]) + "</div>";
+      }).join("");
+
       render(
         '<div class="home-page"><div>' +
-        '<div class="terminal-block">' +
+        '<div class="fade-in"><div class="terminal-block">' +
         '<div class="terminal-line"><span class="prefix">$</span>whoami</div>' +
         '<div class="terminal-line"><span class="prefix">&rarr;</span> ' +
         '<span class="accent">Jeff Fredericks</span>' +
-        " &mdash; Technical Operations &amp; Infrastructure Engineer</div></div>" +
-        '<h1 class="hero-title">Building systems ' +
+        " &mdash; Technical Operations &amp; Infrastructure Engineer</div></div></div>" +
+        '<div class="fade-in"><h1 class="hero-title">Building systems ' +
         '<span class="accent italic">that scale</span><br>' +
-        '&amp; automation that <span class="accent2 italic">endures</span></h1>' +
-        '<p class="hero-subtitle">Infrastructure engineer by trade. Python developer ' +
-        "by practice. I design resilient systems, write clean automation, and make " +
-        "sure everything keeps running at scale.</p>" +
-        '<div class="btn-row">' +
+        '&amp; automation that <span class="accent2 italic">endures</span></h1></div>' +
+        '<div class="fade-in"><p class="hero-subtitle">Infrastructure engineer by ' +
+        "trade. Python developer by practice. I design resilient systems, write " +
+        "clean automation, and make sure everything keeps running at scale.</p></div>" +
+        '<div class="fade-in"><div class="btn-row">' +
         '<a href="/projects" class="btn-primary" data-link>View Projects</a>' +
         '<a href="/contact" class="btn-secondary" data-link>Get in Touch</a>' +
-        "</div></div></div>" +
+        "</div></div></div></div>" +
         '<section id="about" class="home-about">' +
-        heading("Skills") + '<div class="skills-grid">' + skills + "</div>" +
-        heading("Certifications") + '<div class="certs-list">' + certs + "</div>" +
+        heading("About", "fade-in") +
+        '<div class="about-grid">' +
+        '<div class="fade-in"><div class="photo-wrapper"><div class="photo-frame">' +
+        '<span class="photo-initials">JF</span>' +
+        '<span class="photo-label">your photo here</span></div>' +
+        '<div class="photo-corner"></div></div></div>' +
+        '<div class="fade-in"><p class="bio-text">' + BIO[0] + "</p>" +
+        '<p class="bio-text bio-text--gap">' + BIO[1] + "</p></div></div>" +
+        '<div class="fade-in"><div class="status-card">' +
+        '<div class="status-card-header">/* current_status.py */</div>' +
+        '<div class="status-grid">' + status + "</div></div></div>" +
+        heading("Skills", "fade-in") +
+        '<div class="skills-grid fade-in">' + skills + "</div>" +
+        heading("Certifications", "fade-in") +
+        '<div class="certs-list fade-in">' + certs + "</div>" +
         "</section>"
       );
     });
@@ -258,21 +374,31 @@
     { key: "gallery", label: "Gallery" }
   ];
 
+  /* Which projects list is in #view right now, or null for any other view --
+   * render() clears it. Closing a detail panel navigates back to the list, and
+   * without this that would refetch and rebuild markup that is already on
+   * screen, throwing away the scroll position and replaying every fade-in. */
+  var listKey = null;
+
   function projects(params) {
     var tab = params.get("tab") || "work";
     if (!TABS.some(function (t) { return t.key === tab; })) tab = "work";
     var page = parseInt(params.get("page"), 10) || 1;
+    var key = tab + "#" + page;
+
+    if (key === listKey) return Promise.resolve();
+    loading();
 
     var href = function (n, key) {
       return "/projects?tab=" + (key || tab) + (n > 1 ? "&page=" + n : "");
     };
 
     var bar =
-      '<div class="sub-tab-bar"><div class="sub-tab-group">' +
+      '<div class="fade-in"><div class="sub-tab-bar"><div class="sub-tab-group">' +
       TABS.map(function (t) {
         return '<a class="sub-tab-btn' + (t.key === tab ? " active" : "") +
           '" data-link href="' + href(1, t.key) + '">' + t.label + "</a>";
-      }).join("") + "</div></div>";
+      }).join("") + "</div></div></div>";
 
     var request = tab === "gallery"
       ? get("/gallery?page=" + page)
@@ -290,72 +416,207 @@
           : '<p class="side-quests-intro">Nothing here yet.</p>') + "</div>";
       } else {
         body =
-          '<p class="side-quests-intro">The homelab is where I break things on ' +
-          "purpose. It's a full R&amp;D environment for testing infrastructure " +
-          "patterns, running AI workloads, and building skills that transfer " +
-          "directly to production.</p>" +
+          '<div class="fade-in"><p class="side-quests-intro">The homelab is where ' +
+          "I break things on purpose. It's a full R&amp;D environment for testing " +
+          "infrastructure patterns, running AI workloads, and building skills that " +
+          "transfer directly to production.</p></div>" +
           '<div class="quest-list">' + data.items.map(questRow).join("") + "</div>";
       }
 
       render(
-        '<div class="projects-page">' + heading("Projects") + bar +
+        '<div class="projects-page">' + heading("Projects", "fade-in") + bar +
         '<div class="result-line result-line--solo">' + count(data.total, noun) + "</div>" +
         body +
         '<div class="panel-pager">' + pager(data, function (n) { return href(n); }) +
         "</div></div>"
       );
+      listKey = key;
     });
+  }
+
+  /* ── The detail panel ──────────────────────────────────────────────────────
+   *
+   * A project opens as an overlay over the list it was clicked in, not as a
+   * page of its own. That is what the rendered site does -- projects.js fetches
+   * components/_detail_panel.html on click and slides it in from the right --
+   * and the standalone projects/detail.html is only its no-JS fallback. This
+   * shell has JS by definition, so it never renders the fallback.
+   *
+   * The URL still changes to /projects/<slug>: the address is shareable, Back
+   * closes the panel, and a cold load of that address renders the list first
+   * and opens the panel on top of it. */
+
+  function panelSection(paths, label, inner) {
+    return inner
+      ? '<div class="panel-section"><div class="panel-section-label">' +
+        icon(paths, 16) + "<span>" + label + "</span></div>" + inner + "</div>"
+      : "";
+  }
+
+  function panelFiles(rows, trailing) {
+    return (rows || []).length
+      ? '<div class="panel-file-list">' + rows.map(function (file) {
+          return '<div class="panel-file-item"><div>' +
+            '<div class="panel-file-name">' + esc(file.name) + "</div>" +
+            '<div class="panel-file-meta">' + esc(file.file_type || "") + "</div>" +
+            "</div>" + trailing + "</div>";
+        }).join("") + "</div>"
+      : "";
+  }
+
+  function panelMarkup(item) {
+    var isWork = item.type === "work";
+    var dot = isWork ? item.category : item.status;
+    var titleId = "panel-title-" + esc(item.slug);
+
+    var gallery = (item.gallery || []).map(function (image) {
+      var src = image.thumbnail_url || image.url;
+      return src
+        ? '<div class="panel-gallery-img-wrap"><img class="panel-gallery-img" src="' +
+          esc(src) + '" alt="' + esc(image.label) + '" loading="lazy">' +
+          '<span class="panel-gallery-img-label">' + esc(image.label) + "</span></div>"
+        : '<div class="gallery-item">' + IMAGE_ICON + "<span>" + esc(image.label) +
+          "</span></div>";
+    }).join("");
+
+    return (
+      '<div class="detail-panel" id="panel-' + esc(item.slug) + '" role="dialog"' +
+      ' aria-modal="true" aria-labelledby="' + titleId + '" tabindex="-1">' +
+      '<div class="panel-header"><div class="panel-header-left">' +
+      '<span class="panel-dot ' + esc(dot) + '"></span>' +
+      '<h2 class="panel-title" id="' + titleId + '">' + esc(item.title) + "</h2></div>" +
+      '<button class="panel-close-btn" type="button">&#10005; Close</button></div>' +
+      '<div class="panel-body"><div class="panel-tags">' +
+      chips(isWork ? item.tags : (item.specs || []), "panel-tag", 99) + "</div>" +
+      '<p class="panel-long-desc">' + esc(item.long_description) + "</p>" +
+      panelSection(GALLERY_PATHS, "Gallery",
+        gallery ? '<div class="panel-gallery">' + gallery + "</div>" : "") +
+      panelSection(DOCUMENT_PATHS, "Documents",
+        panelFiles(item.documents, icon(EXT_PATHS, 14))) +
+      panelSection(DOWNLOAD_PATHS, "Downloads",
+        panelFiles(item.downloads, icon(DOWNLOAD_PATHS, 14, "dl-icon"))) +
+      "</div></div>"
+    );
+  }
+
+  var backdrop = document.getElementById("panel-backdrop");
+  var panelHost = document.getElementById("panel-host");
+  var activeRow = null;
+  var lastFocus = null;
+  var panelReturn = null;  // where dismissing the panel goes, when Back cannot
+
+  var FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, ' +
+                  '[tabindex]:not([tabindex="-1"])';
+
+  /* The panel is modal, so Tab must not walk out the back of it. */
+  function trapFocus(event) {
+    if (event.key !== "Tab") return;
+    var panel = panelHost && panelHost.firstElementChild;
+    if (!panel) return;
+    var items = Array.prototype.filter.call(
+      panel.querySelectorAll(FOCUSABLE),
+      function (el) { return el.offsetParent !== null; }
+    );
+    if (!items.length) { event.preventDefault(); panel.focus(); return; }
+    var first = items[0], last = items[items.length - 1], at = document.activeElement;
+    // Focus starts on the panel itself, so Shift+Tab from there wraps to the end.
+    if (event.shiftKey && (at === first || at === panel)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && at === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /* While the panel is open the rest of the page stops existing: `inert` takes
+   * it out of the tab order, off the accessibility tree, and out of reach of
+   * clicks in one attribute. */
+  function setBackgroundInert(on) {
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      if (el === panelHost || el === backdrop) return;
+      if (on) el.setAttribute("inert", "");
+      else el.removeAttribute("inert");
+    });
+  }
+
+  /* style.css locks <html> and <body>, which is the whole story on a page that
+   * scrolls the window. Here <main> is the scroller, so it needs holding too or
+   * the list keeps moving under the panel. */
+  function lockScroll(on) {
+    var scroller = document.querySelector("main");
+    document.documentElement.classList.toggle("panel-open", on);
+    if (scroller) scroller.style.overflowY = on ? "hidden" : "";
+  }
+
+  function rowFor(slug) {
+    var rows = view.querySelectorAll(".project-row[data-slug], .quest-row[data-slug]");
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].getAttribute("data-slug") === slug) return rows[i];
+    }
+    return null;
+  }
+
+  function openPanel(item) {
+    if (!panelHost) return;
+    // Captured before `inert` lands: inerting the row's ancestor blurs it.
+    lastFocus = document.activeElement;
+
+    panelHost.innerHTML = panelMarkup(item);
+    var panel = panelHost.firstElementChild;
+    panel.classList.add("open");
+    if (backdrop) backdrop.classList.add("open");
+    lockScroll(true);
+    setBackgroundInert(true);
+    document.addEventListener("keydown", trapFocus, true);
+    // The panel, not its first link: a reader lands on the title.
+    panel.focus({ preventScroll: true });
+
+    activeRow = rowFor(item.slug);
+    if (activeRow) activeRow.classList.add("active");
+  }
+
+  /* Tears the panel down without touching history -- route() calls this, so it
+   * must not navigate. */
+  function closePanel() {
+    if (!panelHost || !panelHost.firstElementChild) return;
+    document.removeEventListener("keydown", trapFocus, true);
+    panelHost.innerHTML = "";
+    if (backdrop) backdrop.classList.remove("open");
+    setBackgroundInert(false);
+    lockScroll(false);
+    if (activeRow) {
+      activeRow.classList.remove("active");
+      activeRow = null;
+    }
+    // Send the keyboard back to the row that opened this, not to the top.
+    if (lastFocus && document.contains(lastFocus)) {
+      lastFocus.focus({ preventScroll: true });
+    }
+    lastFocus = null;
+  }
+
+  /* Close, Escape and the backdrop all mean "go back to the list". Going back
+   * through history keeps the list exactly as it was -- same page, same scroll
+   * position; panelReturn is the fallback for a panel that was opened by URL,
+   * where there is no history entry behind it to return to. */
+  function dismissPanel() {
+    if (!panelHost || !panelHost.firstElementChild) return;
+    if (panelReturn) go(panelReturn);
+    else window.history.back();
   }
 
   function projectDetail(slug) {
     return get("/projects/" + encodeURIComponent(slug)).then(function (item) {
-      var isWork = item.type === "work";
-      var panelChips = isWork ? item.tags : (item.specs || []);
-      var dot = isWork ? item.category : item.status;
-
-      function section(label, inner) {
-        return inner
-          ? '<div class="panel-section"><div class="panel-section-label"><span>' +
-            label + "</span></div>" + inner + "</div>"
-          : "";
-      }
-
-      var gallery = (item.gallery || []).map(function (image) {
-        var src = image.thumbnail_url || image.url;
-        return src
-          ? '<div class="panel-gallery-img-wrap"><img class="panel-gallery-img" src="' +
-            esc(src) + '" alt="' + esc(image.label) + '" loading="lazy">' +
-            '<span class="panel-gallery-img-label">' + esc(image.label) + "</span></div>"
-          : '<div class="gallery-item">' + IMAGE_ICON + "<span>" + esc(image.label) +
-            "</span></div>";
-      }).join("");
-
-      function fileList(rows) {
-        return (rows || []).length
-          ? '<div class="panel-file-list">' + rows.map(function (file) {
-              return '<div class="panel-file-item"><div>' +
-                '<div class="panel-file-name">' + esc(file.name) + "</div>" +
-                '<div class="panel-file-meta">' + esc(file.file_type || "") + "</div>" +
-                "</div>" + EXT_ICON + "</div>";
-            }).join("") + "</div>"
-          : "";
-      }
-
-      render(
-        '<div class="projects-page">' + heading(item.title) +
-        '<div class="detail-panel detail-panel--page">' +
-        '<div class="panel-header"><div class="panel-header-left">' +
-        '<span class="panel-dot ' + esc(dot) + '"></span>' +
-        '<h2 class="panel-title">' + esc(item.title) + "</h2></div>" +
-        '<a class="panel-close-btn" href="/projects" data-link>&larr; All projects</a></div>' +
-        '<div class="panel-body"><div class="panel-tags">' +
-        chips(panelChips, "panel-tag", 99) + "</div>" +
-        '<p class="panel-long-desc">' + esc(item.long_description) + "</p>" +
-        section("Gallery", gallery ? '<div class="panel-gallery">' + gallery + "</div>" : "") +
-        section("Documents", fileList(item.documents)) +
-        section("Downloads", fileList(item.downloads)) +
-        "</div></div></div>"
-      );
+      // A cold load has no list underneath yet; render the tab that owns this
+      // item first, so closing the panel lands somewhere real.
+      var tab = item.type === "work" ? "work" : "sidequests";
+      var listShown = listKey !== null;
+      panelReturn = listShown ? null : "/projects?tab=" + tab;
+      var beneath = listShown
+        ? Promise.resolve()
+        : projects(new URLSearchParams("tab=" + tab));
+      return beneath.then(function () { openPanel(item); });
     });
   }
 
@@ -363,12 +624,14 @@
     var page = parseInt(params.get("page"), 10) || 1;
     return get("/posts?page=" + page).then(function (data) {
       render(
-        '<div class="blog-page">' + heading("Blog") +
-        '<p class="blog-intro">Notes from the field — infrastructure war stories, ' +
-        "homelab experiments, and things I learned the hard way.</p>" +
+        '<div class="blog-page">' + heading("Blog", "fade-in") +
+        '<div class="fade-in"><p class="blog-intro">Notes from the field — ' +
+        "infrastructure war stories, homelab experiments, and things I learned " +
+        "the hard way.</p></div>" +
         '<div class="blog-list">' + (data.items.length
           ? data.items.map(function (post) {
               return (
+                '<div class="fade-in">' +
                 '<a class="blog-card" data-link href="/blog/' +
                 encodeURIComponent(post.slug) + '">' +
                 '<div class="blog-card-top"><h3 class="blog-card-title">' +
@@ -376,7 +639,7 @@
                 '<div class="blog-card-tags">' + chips(post.tags, "blog-tag") + "</div></div>" +
                 '<p class="blog-card-excerpt">' + esc(post.excerpt) + "</p>" +
                 '<div class="blog-card-footer"><span class="blog-card-date">' +
-                formatDate(post.date) + "</span></div></a>"
+                formatDate(post.date) + "</span></div></a></div>"
               );
             }).join("")
           : '<p class="blog-intro">No posts yet.</p>') + "</div>" +
@@ -390,14 +653,16 @@
     return get("/posts/" + encodeURIComponent(slug)).then(function (post) {
       render(
         '<div class="blog-post-page">' +
-        '<a href="/blog" class="back-link" data-link>&larr; Back to Blog</a>' +
+        '<div class="fade-in">' +
+        '<a href="/blog" class="back-link" data-link>&larr; Back to Blog</a></div>' +
+        '<div class="fade-in">' +
         '<div class="blog-post-date">' + formatDate(post.date) + "</div>" +
         '<h1 class="blog-post-title">' + esc(post.title) + "</h1>" +
-        '<div class="blog-post-tags">' + chips(post.tags, "blog-tag", 99) + "</div>" +
-        '<div class="blog-post-content">' +
+        '<div class="blog-post-tags">' + chips(post.tags, "blog-tag", 99) + "</div></div>" +
+        '<div class="fade-in"><div class="blog-post-content">' +
         '<p class="blog-post-excerpt">' + esc(post.excerpt) + "</p>" +
         '<div class="blog-post-divider"></div>' +
-        '<p class="blog-post-body">' + esc(post.content) + "</p></div></div>"
+        '<p class="blog-post-body">' + esc(post.content) + "</p></div></div></div>"
       );
     });
   }
@@ -414,7 +679,7 @@
   }
 
   function searchGroup(label, more, inner) {
-    return '<section class="search-group"><h3 class="search-group-title">' + label +
+    return '<section class="search-group fade-in"><h3 class="search-group-title">' + label +
       (more ? '<a class="search-group-more" data-link href="' + more +
         '">see all &rarr;</a>' : "") + "</h3>" + inner + "</section>";
   }
@@ -429,18 +694,18 @@
       var body;
 
       if (!q) {
-        body = '<p class="search-empty">Searches titles, descriptions, specs, ' +
+        body = '<p class="search-empty fade-in">Searches titles, descriptions, specs, ' +
           "gallery labels and post bodies. Quote a phrase to match it exactly; " +
           "prefix a word with <code>-</code> to exclude it.</p>";
       } else if (data.too_short) {
-        body = '<p class="search-empty">Two characters or more, please &mdash; ' +
+        body = '<p class="search-empty fade-in">Two characters or more, please &mdash; ' +
           "one letter matches almost everything.</p>";
       } else if (!data.total) {
-        body = '<p class="search-empty">Nothing matches <strong>' + esc(q) +
+        body = '<p class="search-empty fade-in">Nothing matches <strong>' + esc(q) +
           "</strong>. Matching is by word stem, so partial words like " +
           "<code>prox</code> only find tags &mdash; try the whole word.</p>";
       } else {
-        body = '<p class="search-count">' + data.total + " result" +
+        body = '<p class="search-count fade-in">' + data.total + " result" +
           (data.total === 1 ? "" : "s") + " for <strong>" + esc(q) + "</strong></p>";
 
         if (groups.tags.length) {
@@ -486,8 +751,8 @@
       }
 
       render(
-        '<div class="search-page">' + heading("Search") +
-        '<form class="search-hero" role="search" data-search>' +
+        '<div class="search-page">' + heading("Search", "fade-in") +
+        '<form class="search-hero fade-in" role="search" data-search>' +
         '<label class="visually-hidden" for="search-hero-input">Search</label>' +
         '<input id="search-hero-input" class="search-hero-input" type="search" name="q"' +
         ' value="' + esc(q) + '" placeholder="projects, side quests, gallery, posts"' +
@@ -553,30 +818,35 @@
 
   function contact() {
     render(
-      '<div class="contact-page">' + heading("Get In Touch") +
-      '<div class="contact-card"><p class="contact-intro">' +
+      '<div class="contact-page">' + heading("Get In Touch", "fade-in") +
+      '<div class="fade-in"><div class="contact-card"><p class="contact-intro">' +
       "Whether it's infrastructure consulting, a Python project, or just " +
       "talking shop about homelabs &mdash; I'd like to hear from you.</p>" +
       '<div class="contact-links">' + CONTACT_LINKS.map(contactLink).join("") +
-      "</div></div>" +
-      '<div class="resume-row"><button class="btn-primary resume-btn">' +
+      "</div></div></div>" +
+      '<div class="fade-in"><div class="resume-row">' +
+      '<button class="btn-primary resume-btn">' +
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"' +
       ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"' +
       ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
       '<polyline points="7 10 12 15 17 10"/>' +
       '<line x1="12" x2="12" y1="15" y2="3"/></svg>Download Resume</button>' +
-      '<span class="resume-meta">PDF &middot; Updated 2026</span></div></div>'
+      '<span class="resume-meta">PDF &middot; Updated 2026</span></div></div></div>'
     );
     return Promise.resolve();
   }
 
   // ── routing ───────────────────────────────────────────────────────────────
 
+  /* The fourth field is "owns its own loading state". The two projects routes
+   * do: one reuses a list it may already have rendered, the other opens a panel
+   * over it, and blanking #view first would undo both. */
   var ROUTES = [
     [/^\/$/, home, "home"],
-    [/^\/projects$/, projects, "projects"],
-    [/^\/projects\/([^/]+)$/, function (params, slug) { return projectDetail(slug); }, "projects"],
+    [/^\/projects$/, projects, "projects", true],
+    [/^\/projects\/([^/]+)$/, function (params, slug) { return projectDetail(slug); },
+      "projects", true],
     [/^\/blog$/, posts, "blog"],
     [/^\/blog\/([^/]+)$/, function (params, slug) { return postDetail(slug); }, "blog"],
     [/^\/search$/, search, "search"],
@@ -586,6 +856,9 @@
   function route() {
     var path = window.location.pathname.replace(/\/+$/, "") || "/";
     var params = new URLSearchParams(window.location.search);
+
+    // Any navigation at all leaves the panel behind, Back included.
+    closePanel();
 
     for (var i = 0; i < ROUTES.length; i++) {
       var match = path.match(ROUTES[i][0]);
@@ -597,7 +870,7 @@
       });
       if (section !== "search") document.querySelector(".nav-search-input").value = "";
 
-      loading();
+      if (!ROUTES[i][3]) loading();
       var args = [params].concat(match.slice(1).map(decodeURIComponent));
       ROUTES[i][1].apply(null, args).catch(failed);
       return;
@@ -614,6 +887,15 @@
    * their own markup on every render, and per-link listeners would have to be
    * reattached each time. */
   document.addEventListener("click", function (event) {
+    if (event.target.closest(".panel-close-btn")) {
+      dismissPanel();
+      return;
+    }
+    if (backdrop && event.target === backdrop) {
+      dismissPanel();
+      return;
+    }
+
     var link = event.target.closest("a[data-link]");
     if (!link) return;
     // Let the browser handle anything the user asked to open elsewhere.
@@ -627,6 +909,10 @@
     if (!form) return;
     event.preventDefault();
     go("/search?q=" + encodeURIComponent(form.elements.q.value));
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") dismissPanel();
   });
 
   window.addEventListener("popstate", route);

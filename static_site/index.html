@@ -65,6 +65,14 @@
         </footer>
     </main>
 
+    <!-- Both overlays are children of <body>, never of <main>. <main> carries a
+         transform from `animation: pageIn ... both`, and a transformed ancestor
+         becomes the containing block for its position:fixed descendants -- a
+         panel left inside it would pin to <main> instead of the viewport. Same
+         reason app/static/js/projects.js moves them out on the rendered site. -->
+    <div id="panel-backdrop"></div>
+    <div id="panel-host"></div>
+
     <!-- Written by sync_static.sh from a Terraform output. Loading it as a
          separate file rather than baking the value in means the API can move
          without rebuilding the shell. -->
