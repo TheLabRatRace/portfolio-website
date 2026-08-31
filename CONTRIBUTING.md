@@ -2,12 +2,17 @@
 
 ## Getting a stack up
 
-    cp .env.example .env
+    cp .env.example .env             # fill in SECRET_KEY and RDS_DATABASE_URL
     docker compose up -d --build     # http://localhost:5003
 
-V2 is deliberately isolated from V1 — its own compose project, volume and
-port — so nothing you do here can reach the real site's database. Break it
-freely; `tools/seed_stress.py --reset` puts the content back.
+**That connects to AWS RDS.** It is the real database the site serves from,
+so a stack brought up this way is not a sandbox. For one that is:
+
+    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+That runs against the throwaway `db` container on its own volume. Break it
+freely; `tools/seed_stress.py --reset` puts the content back. V2 remains
+isolated from V1 either way — its own compose project, volume and port.
 
 To reach `/admin` you need an account, and there is no seed one:
 
@@ -22,11 +27,17 @@ The pipeline runs both plus a template compile check, a dependency audit, a
 secret scan, and a Docker build with a smoke test. Running the first two
 locally catches almost everything before a runner is involved.
 
-The tests run against your dev database — search needs real Postgres — so
-**check that a test run leaves the row counts unchanged.** Every test that
-writes takes the `db_session` fixture, which rolls its transaction back. A
-test that writes without it will pass and quietly seed your data; that has
-already happened once, and the counts are the only thing that catches it.
+The tests run against real Postgres — search needs it — but never against
+RDS. They read `TEST_DATABASE_URL`, which compose pins to the local `db`
+container, and `create_app("testing")` refuses to start against a remote
+host. So `docker compose exec web pytest` is safe from either stack; you do
+not need the local override to run it.
+
+Within that database, **check that a test run leaves the row counts
+unchanged.** Every test that writes takes the `db_session` fixture, which
+rolls its transaction back. A test that writes without it will pass and
+quietly seed your data; that has already happened once, and the counts are
+the only thing that catches it.
 
 ## House rules
 

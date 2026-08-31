@@ -45,3 +45,4 @@ app/static/images/stress/
 Dockerfile
 .dockerignore
 docker-compose.yml
+docker-compose.local.yml

@@ -8,7 +8,12 @@ from pathlib import Path
 
 from flask import Flask, request
 
-from config import assert_database_url_is_safe, assert_secret_key_is_safe, config
+from config import (
+    assert_database_url_is_safe,
+    assert_secret_key_is_safe,
+    assert_test_database_is_local,
+    config,
+)
 
 
 def create_app(config_name="development"):
@@ -19,6 +24,9 @@ def create_app(config_name="development"):
     # admin boundary at all, so it must not get as far as serving a request.
     assert_secret_key_is_safe(config_name, app.config.get("SECRET_KEY"))
     assert_database_url_is_safe(
+        config_name, app.config.get("SQLALCHEMY_DATABASE_URI")
+    )
+    assert_test_database_is_local(
         config_name, app.config.get("SQLALCHEMY_DATABASE_URI")
     )
 

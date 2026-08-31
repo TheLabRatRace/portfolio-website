@@ -1,0 +1,15 @@
+# Run against the local throwaway Postgres instead of AWS RDS.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Use it to break things: seed junk, drop tables, test a migration. Nothing
+# here reaches the database the site serves from.
+#
+# The test suite does not need this file. TestingConfig reads
+# TEST_DATABASE_URL, which docker-compose.yml already points at the `db`
+# container, so `docker compose exec web pytest` stays local either way.
+
+services:
+  web:
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres

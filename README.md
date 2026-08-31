@@ -41,7 +41,8 @@ itself is gitignored and must never be committed.
 | `SECRET_KEY` | Flask session signing. **Required in production — the app refuses to boot without it.** |
 | `DATABASE_URL` | Postgres DSN. Compose builds this itself from `POSTGRES_PASSWORD`. |
 | `POSTGRES_PASSWORD` | Password for the local `db` service. |
-| `RDS_DATABASE_URL` | The AWS RDS DSN. Read **only** by `docker-compose.rds.yml`. |
+| `RDS_DATABASE_URL` | The AWS RDS DSN. **Required** — compose will not start without it. |
+| `TEST_DATABASE_URL` | Where `pytest` writes. Compose pins it to the local `db`. |
 | `PORT` | Host port the container publishes on. Defaults to 5003. |
 | `DEV_RELOAD` | Hot-reloads templates and stops caching static assets. Local only. |
 | `SHOW_PAGE_TITLE` | Big serif page headings on or off. |
@@ -77,17 +78,29 @@ what you want the moment you suspect it leaked.
 
 ## The database
 
-Two targets, and switching between them is explicit.
+AWS RDS is what the app talks to. The local Postgres still runs beside it,
+because that is what the test suite writes to.
 
 ```bash
-docker compose up -d                                             # local throwaway Postgres
-docker compose -f docker-compose.yml -f docker-compose.rds.yml up -d web   # AWS RDS
+docker compose up -d                                                        # RDS
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d      # local
 ```
 
-The plain command is the default on purpose. `docker compose exec web pytest`
-runs against whatever the web container is wired to, and the suite writes rows
-— so the local volume is where it belongs. `docker-compose.yml` never reads
-`RDS_DATABASE_URL`; only the override does.
+The local override is for breaking things: seed junk, drop a table, try a
+migration. Nothing in it reaches the database the site serves from.
+
+### The suite does not follow the app
+
+`pytest` runs against `TEST_DATABASE_URL`, which `docker-compose.yml` pins to
+the `db` container — not `DATABASE_URL`, which now names RDS. Two separate
+variables, because the distance between a stray `pytest` and the real rows
+should not be one exported environment variable.
+
+The fixtures do roll every write back, but that is a convention: a test that
+opens its own engine, or a run killed mid-transaction, walks straight past it.
+So `create_app("testing")` refuses outright to start against a remote host,
+and one test asserts that the run it is part of is itself pointed somewhere
+local. Nothing needs `-f docker-compose.local.yml` to run the suite safely.
 
 ### The application is not the master user
 
@@ -123,8 +136,8 @@ downgrades looks exactly like one that did not.
 `certs/global-bundle.pem` is AWS's published list of RDS CA certificates. It
 holds no keys, which is why it is the one file the `*.pem` rule in
 `.gitignore` un-ignores; refresh it from
-`https://truststore.pki.rds.amazonaws.com/global-bundle.pem`. The override
-mounts it read-only at `/app/certs/global-bundle.pem`.
+`https://truststore.pki.rds.amazonaws.com/global-bundle.pem`. Compose mounts
+it read-only at `/app/certs/global-bundle.pem`.
 
 ### Bringing up a fresh instance
 

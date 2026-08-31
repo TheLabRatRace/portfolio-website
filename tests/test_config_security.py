@@ -7,7 +7,9 @@ public, so a committed default is not a bad habit, it is a working bypass.
 These tests exist to make that impossible to reintroduce.
 """
 
+import importlib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -151,3 +153,45 @@ def test_the_committed_trust_store_is_present_and_is_a_ca_bundle():
     text = bundle.read_text()
     assert text.count("BEGIN CERTIFICATE") > 50
     assert "PRIVATE KEY" not in text, "a trust store holds no keys"
+
+
+# ── TEST_DATABASE_URL: the suite never aims at the real database ────────────
+#
+# RDS is what `docker compose up` connects to now, so the distance between
+# `pytest` and the rows the site serves is one environment variable. The
+# fixtures roll back, but a test that opens its own engine or a run killed
+# mid-transaction does not, so the refusal is a wall rather than a habit.
+
+
+def test_the_testing_config_does_not_follow_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", VERIFIED)
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+    importlib.reload(config_module)
+    try:
+        assert RDS_HOST not in config_module.TestingConfig.SQLALCHEMY_DATABASE_URI
+        assert "@db:5432" in config_module.TestingConfig.SQLALCHEMY_DATABASE_URI
+    finally:
+        importlib.reload(config_module)
+
+
+def test_a_remote_test_database_is_refused():
+    with pytest.raises(RuntimeError, match="writes rows"):
+        config_module.assert_test_database_is_local("testing", VERIFIED)
+
+
+@pytest.mark.parametrize("host", sorted(config_module.LOCAL_DB_HOSTS))
+def test_a_local_test_database_is_accepted(host):
+    config_module.assert_test_database_is_local(
+        "testing", f"postgresql://postgres:pw@{host}:5432/postgres"
+    )
+
+
+@pytest.mark.parametrize("config_name", ["development", "production"])
+def test_only_the_testing_config_is_gated(config_name):
+    config_module.assert_test_database_is_local(config_name, VERIFIED)
+
+
+def test_the_suite_this_assertion_runs_in_is_itself_local(app):
+    """Belt and braces: whatever wired this run, it is not the real database."""
+    host = urlsplit(app.config["SQLALCHEMY_DATABASE_URI"]).hostname or ""
+    assert host.lower() in config_module.LOCAL_DB_HOSTS

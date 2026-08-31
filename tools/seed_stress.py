@@ -9,14 +9,24 @@ Usage (from the host, piped into the running web container):
 
 Generated rows are marked with a 'stress-' slug prefix so --reset can remove
 them without touching the original seed data from migrate.sql.
+
+DATABASE_URL names AWS RDS by default, and 350 junk projects do not belong
+there, so a remote host is refused unless --allow-remote says otherwise.
 """
 
 import argparse
 import os
 import random
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg2
 from psycopg2.extras import execute_values
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from config import LOCAL_DB_HOSTS  # noqa: E402
 
 SLUG_PREFIX = "stress-"
 
@@ -118,10 +128,22 @@ def main():
                     help="how many distinct real image paths to cycle through")
     ap.add_argument("--reset", action="store_true", help="delete generated rows and exit")
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--allow-remote", action="store_true",
+                    help="permit a non-local DATABASE_URL (RDS). Off by default.")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
     dsn = os.environ["DATABASE_URL"]
+    host = (urlsplit(dsn).hostname or "").lower()
+    if host not in LOCAL_DB_HOSTS and not args.allow_remote:
+        raise SystemExit(
+            f"DATABASE_URL points at {host!r}, which is not a local database. "
+            "This tool writes hundreds of junk rows. Bring up the local stack "
+            "instead:\n\n"
+            "    docker compose -f docker-compose.yml -f docker-compose.local.yml "
+            "up -d\n\n"
+            "or pass --allow-remote if you genuinely mean that host."
+        )
     conn = psycopg2.connect(dsn)
     conn.autocommit = False
     cur = conn.cursor()

@@ -87,6 +87,30 @@ def assert_database_url_is_safe(config_name, database_uri):
     )
 
 
+def assert_test_database_is_local(config_name, database_uri):
+    """Keep the suite off the real database now that RDS is the default.
+
+    Fixtures roll their writes back, but that is a convention, not a wall: a
+    test that opens its own engine, a run killed mid-transaction, or any DDL
+    escapes it. The wall is here -- the testing config resolves its own
+    TEST_DATABASE_URL, and pointing it at a remote host is refused outright.
+    """
+    if config_name != "testing":
+        return
+
+    host = (urlsplit(database_uri or "").hostname or "").lower()
+    if not host or host in LOCAL_DB_HOSTS:
+        return
+
+    raise RuntimeError(
+        f"TEST_DATABASE_URL points at the remote host {host!r}. The suite "
+        "writes rows, drops nothing, and is not something to aim at the "
+        "database the site serves from. Point it at the local Postgres "
+        "instead, or unset it to take the default:\n\n"
+        "    postgresql://postgres:<password>@db:5432/postgres\n"
+    )
+
+
 class Config:
     # No fallback on purpose. A default here is a default in production, and
     # this file is committed. Development and testing name their own below;
@@ -179,6 +203,14 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = False
     SECRET_KEY = "testing-only-never-in-production"
+
+    # Its own variable, deliberately not DATABASE_URL. That one now names RDS
+    # by default, and the suite must never be one stray `pytest` away from
+    # writing to it. assert_test_database_is_local refuses a remote host here.
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "TEST_DATABASE_URL",
+        "postgresql://postgres:mysecretpassword@db:5432/postgres",
+    )
     # Tests post forms without a browser to fetch a token first. The protection
     # is still exercised: one test turns it back on and asserts the rejection.
     WTF_CSRF_ENABLED = False

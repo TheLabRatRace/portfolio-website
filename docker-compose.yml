@@ -37,21 +37,29 @@ services:
       # No fallback: FLASK_ENV is production above, so an unset key makes
       # the app refuse to boot with instructions rather than run forgeable.
       SECRET_KEY: ${SECRET_KEY:-}
-      # Defaults to the sibling `db` container. Overridable so the same image
-      # can point at RDS -- see docker-compose.rds.yml, which is the only
-      # thing that sets DATABASE_URL. Deliberately NOT read from .env: tests
-      # run against whatever this resolves to, and they must never touch RDS.
-      DATABASE_URL: ${LOCAL_DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres}
+      # AWS RDS is the default target. `docker compose up` is the real
+      # database; docker-compose.local.yml is how you get the throwaway one.
+      # The suite does not follow this variable -- TestingConfig resolves
+      # TEST_DATABASE_URL on its own and refuses a remote host.
+      DATABASE_URL: ${DATABASE_URL:-${RDS_DATABASE_URL:?set RDS_DATABASE_URL in .env, or add -f docker-compose.local.yml for the local database}}
+      # Where TestingConfig looks. Kept on the `db` container on purpose.
+      TEST_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres
       SITE_VERSION: v2
     volumes:
       # Live source mount -- edits on the host reach the container without a rebuild.
       - .:/app
+      # sslmode=verify-full has nothing to verify against without this.
+      # Read-only: the trust store is input, never something the app rewrites.
+      - ./certs/global-bundle.pem:/app/certs/global-bundle.pem:ro
     # The mount removes the rebuild; --reload removes the restart. Without it
     # gunicorn keeps serving the modules it imported at boot. Compose is the
     # local dev environment here -- the image's own CMD stays reload-free.
     command: >
       gunicorn --bind 0.0.0.0:5002 --workers 2 --timeout 60 --reload
       --access-logfile - --error-logfile - run:app
+    # Still waited on even though the app talks to RDS: `db` is the database
+    # the test suite writes to, and a container that is up but not ready
+    # fails the suite in a way that looks like a code bug.
     depends_on:
       db:
         condition: service_healthy
