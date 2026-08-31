@@ -1,11 +1,27 @@
 # Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
 
-# Must already exist as a Route 53 public hosted zone.
-domain_name = "example.com"
+# ── Phase one: the task on its own ───────────────────────────────────────────
+# Leave enable_cdn false and the whole domain/TLS/CDN layer is not created. The
+# site answers at http://<task-public-ip>:5002, and deploy/scripts/task_ip.sh
+# prints that address -- it changes on every deploy.
+enable_cdn = false
+
+# Who may reach the task directly. Only read while enable_cdn is false.
+# There is no TLS in phase one, so anyone on the network path reads every
+# request in the clear. Narrow this to your own address while you are testing:
+#   allowed_cidrs = ["203.0.113.4/32"]   # curl ifconfig.me to find yours
+allowed_cidrs = ["0.0.0.0/0"]
+
+# ── Phase two: a name and a certificate in front of it ───────────────────────
+# Flip enable_cdn to true and set domain_name. This requires a Route 53 public
+# hosted zone for the domain -- see the Namecheap section of deploy/README.md
+# for the three ways to get there.
+domain_name = ""
 
 # "" serves the apex (example.com). "www" would serve www.example.com.
 subdomain = ""
 
+# ── Everything else ──────────────────────────────────────────────────────────
 # Must match the region the RDS instance is in, or every query pays a
 # cross-region round trip.
 region = "us-east-2"

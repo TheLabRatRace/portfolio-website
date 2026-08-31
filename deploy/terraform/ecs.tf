@@ -42,16 +42,19 @@ resource "aws_ecs_task_definition" "app" {
     image     = "${aws_ecr_repository.app.repository_url}:latest"
     essential = true
 
-    portMappings = [{ containerPort = 5002, protocol = "tcp" }]
+    portMappings = [{ containerPort = local.container_port, protocol = "tcp" }]
 
     environment = [
       { name = "FLASK_ENV", value = "production" },
-      { name = "PORT", value = "5002" },
-      # TLS terminates at CloudFront, so the cookie must be marked Secure or it
-      # travels on any plain-http request the browser is talked into making.
-      { name = "SESSION_COOKIE_SECURE", value = "1" },
-      # Exactly one proxy sits in front of this container. See _setup_proxy_fix.
-      { name = "TRUSTED_PROXY_HOPS", value = "1" },
+      { name = "PORT", value = tostring(local.container_port) },
+      # Both of these are statements about what is in front of the container,
+      # and in phase one nothing is. A Secure cookie on a plain-http site is
+      # one the browser accepts and then never sends back, so the admin login
+      # would appear to succeed and then bounce straight back to the form --
+      # and trusting X-Forwarded-For with no proxy writing it lets any caller
+      # name their own client IP.
+      { name = "SESSION_COOKIE_SECURE", value = var.enable_cdn ? "1" : "" },
+      { name = "TRUSTED_PROXY_HOPS", value = var.enable_cdn ? "1" : "0" },
       # The container filesystem dies with the task; stdout is what is kept.
       { name = "LOG_TO_STDOUT", value = "1" },
       { name = "S3_BUCKET", value = var.assets_bucket },
@@ -68,7 +71,7 @@ resource "aws_ecs_task_definition" "app" {
     ]
 
     healthCheck = {
-      command     = ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5002/healthz', timeout=4).status == 200 else 1)\""]
+      command     = ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:${local.container_port}/healthz', timeout=4).status == 200 else 1)\""]
       interval    = 30
       timeout     = 5
       retries     = 3

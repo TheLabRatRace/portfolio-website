@@ -6,7 +6,8 @@
 # forced deployment -- Terraform is not involved and does not need to run.
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/../terraform"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/../terraform"
 
 REGION="$(terraform output -raw region 2>/dev/null || echo "${AWS_REGION:-us-east-2}")"
 REPO="$(terraform output -raw ecr_repository_url)"
@@ -46,5 +47,12 @@ aws ecs update-service \
 echo "==> waiting for the service to settle (a few minutes)"
 aws ecs wait services-stable --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE"
 
-echo "==> live at $(terraform output -raw site_url)"
-echo "    origin record now resolves to: $(dig +short "$(terraform output -raw origin_record)" | tail -1)"
+SITE_URL="$(terraform output -raw site_url)"
+if [[ -n "$SITE_URL" ]]; then
+  echo "==> live at $SITE_URL"
+  echo "    origin record now resolves to: $(dig +short "$(terraform output -raw origin_record)" | tail -1)"
+else
+  # Phase one: no DNS name exists, and the task that just started has an address
+  # the previous one did not. Ask ECS rather than printing a stale value.
+  echo "==> live at $("$SCRIPT_DIR/task_ip.sh")"
+fi

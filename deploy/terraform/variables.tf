@@ -14,18 +14,54 @@ variable "region" {
   default     = "us-east-2"
 }
 
+variable "enable_cdn" {
+  description = <<-EOT
+    Put CloudFront, a certificate and a DNS name in front of the task.
+
+    false -- phase one -- is the task on its own: reachable at
+    http://<public-ip>:5002, no TLS, and a new address after every deploy.
+    Enough to see the site running on real infrastructure and to check that
+    it talks to RDS from inside the VPC.
+
+    true adds TLS, caching, a stable name and a security group that closes the
+    origin to everything but CloudFront. It needs a Route 53 public hosted
+    zone for domain_name; see "Phase two" in deploy/README.md for how to get
+    one when the domain's DNS is at Namecheap.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_cdn || var.domain_name != ""
+    error_message = "enable_cdn = true needs domain_name set, and a Route 53 public hosted zone for it."
+  }
+}
+
 variable "domain_name" {
   description = <<-EOT
-    The registered domain, without a subdomain -- "example.com". A Route 53
-    public hosted zone for it must already exist; this configuration looks it
-    up, it does not create it.
-
-    The domain is not optional. TLS requires a certificate, a certificate
-    requires a name you control, and this design also needs a stable hostname
-    to point CloudFront at (a Fargate task's public IP changes on every
-    deploy). Both come from the zone.
+    The registered domain, without a subdomain -- "example.com". Required only
+    when enable_cdn is true, and a Route 53 public hosted zone for it must
+    already exist; this configuration looks the zone up, it does not create it.
   EOT
   type        = string
+  default     = ""
+}
+
+variable "allowed_cidrs" {
+  description = <<-EOT
+    Who may reach the task directly. Only consulted while enable_cdn is false;
+    once CloudFront is in front, the security group is narrowed to its
+    published origin ranges and this is ignored.
+
+    The default is the whole internet, which is what "just use the public IP"
+    means. Phase one has no TLS, so while it is open anyone on the path reads
+    every request -- including an /admin/login password. Narrowing this to your
+    own address is one line and worth it:
+
+        allowed_cidrs = ["203.0.113.4/32"]
+  EOT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "subdomain" {

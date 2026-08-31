@@ -1,5 +1,6 @@
 # ── certificate ─────────────────────────────────────────────────────────────
 resource "aws_acm_certificate" "site" {
+  count    = var.enable_cdn ? 1 : 0
   provider = aws.us_east_1
 
   domain_name               = local.site_domain
@@ -12,12 +13,15 @@ resource "aws_acm_certificate" "site" {
 }
 
 resource "aws_route53_record" "cert_validation" {
+  # Iterating the resource list rather than indexing it: with count = 0 this
+  # is an empty list, an empty map, and no instances -- where site[0] would be
+  # an error before Terraform ever got to the condition.
   for_each = {
-    for option in aws_acm_certificate.site.domain_validation_options :
+    for option in flatten([for cert in aws_acm_certificate.site : cert.domain_validation_options]) :
     option.domain_name => option
   }
 
-  zone_id         = data.aws_route53_zone.this.zone_id
+  zone_id         = data.aws_route53_zone.this[0].zone_id
   name            = each.value.resource_record_name
   type            = each.value.resource_record_type
   records         = [each.value.resource_record_value]
@@ -26,9 +30,10 @@ resource "aws_route53_record" "cert_validation" {
 }
 
 resource "aws_acm_certificate_validation" "site" {
+  count    = var.enable_cdn ? 1 : 0
   provider = aws.us_east_1
 
-  certificate_arn         = aws_acm_certificate.site.arn
+  certificate_arn         = aws_acm_certificate.site[0].arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 }
 
@@ -36,23 +41,28 @@ resource "aws_acm_certificate_validation" "site" {
 # Looked up by name rather than pasted as UUIDs: the managed policy IDs are
 # opaque and a wrong one is a page that half-works.
 data "aws_cloudfront_cache_policy" "disabled" {
-  name = "Managed-CachingDisabled"
+  count = var.enable_cdn ? 1 : 0
+  name  = "Managed-CachingDisabled"
 }
 
 data "aws_cloudfront_cache_policy" "optimized" {
-  name = "Managed-CachingOptimized"
+  count = var.enable_cdn ? 1 : 0
+  name  = "Managed-CachingOptimized"
 }
 
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
-  name = "Managed-AllViewer"
+  count = var.enable_cdn ? 1 : 0
+  name  = "Managed-AllViewer"
 }
 
 data "aws_cloudfront_response_headers_policy" "security" {
-  name = "Managed-SecurityHeadersPolicy"
+  count = var.enable_cdn ? 1 : 0
+  name  = "Managed-SecurityHeadersPolicy"
 }
 
 # ── distribution ────────────────────────────────────────────────────────────
 resource "aws_cloudfront_distribution" "site" {
+  count           = var.enable_cdn ? 1 : 0
   enabled         = true
   is_ipv6_enabled = true
   comment         = "${local.name} -- ${local.site_domain}"
@@ -61,10 +71,10 @@ resource "aws_cloudfront_distribution" "site" {
 
   origin {
     origin_id   = "task"
-    domain_name = aws_route53_record.origin.fqdn
+    domain_name = aws_route53_record.origin[0].fqdn
 
     custom_origin_config {
-      http_port  = 5002
+      http_port  = local.container_port
       https_port = 443
 
       # http-only, and this is the one real cost of not running a load
@@ -102,9 +112,9 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
 
-    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled[0].id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer[0].id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security[0].id
   }
 
   # CSS, JS and images. This is most of the byte volume and all of the requests
@@ -118,12 +128,12 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
 
-    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized[0].id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security[0].id
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.site.certificate_arn
+    acm_certificate_arn      = aws_acm_certificate_validation.site[0].certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }

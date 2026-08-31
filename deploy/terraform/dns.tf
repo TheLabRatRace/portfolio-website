@@ -8,7 +8,8 @@
 # the first apply. Terraform is told to stop looking at it after that, because
 # the Lambda -- not this file -- is what owns the value from then on.
 resource "aws_route53_record" "origin" {
-  zone_id = data.aws_route53_zone.this.zone_id
+  count   = var.enable_cdn ? 1 : 0
+  zone_id = data.aws_route53_zone.this[0].zone_id
   name    = local.origin_domain
   type    = "A"
   ttl     = 60
@@ -20,6 +21,7 @@ resource "aws_route53_record" "origin" {
 }
 
 data "archive_file" "origin_dns" {
+  count       = var.enable_cdn ? 1 : 0
   type        = "zip"
   source_file = "${path.module}/lambda/origin_dns.py"
   output_path = "${path.module}/.build/origin_dns.zip"
@@ -36,11 +38,14 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "origin_dns" {
+  count              = var.enable_cdn ? 1 : 0
   name               = "${local.name}-origin-dns"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
 data "aws_iam_policy_document" "origin_dns" {
+  count = var.enable_cdn ? 1 : 0
+
   statement {
     actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:*"]
@@ -58,26 +63,29 @@ data "aws_iam_policy_document" "origin_dns" {
   # rewrite any DNS record in the account.
   statement {
     actions   = ["route53:ChangeResourceRecordSets"]
-    resources = [data.aws_route53_zone.this.arn]
+    resources = [data.aws_route53_zone.this[0].arn]
   }
 }
 
 resource "aws_iam_role_policy" "origin_dns" {
+  count  = var.enable_cdn ? 1 : 0
   name   = "update-origin-record"
-  role   = aws_iam_role.origin_dns.id
-  policy = data.aws_iam_policy_document.origin_dns.json
+  role   = aws_iam_role.origin_dns[0].id
+  policy = data.aws_iam_policy_document.origin_dns[0].json
 }
 
 resource "aws_cloudwatch_log_group" "origin_dns" {
+  count             = var.enable_cdn ? 1 : 0
   name              = "/aws/lambda/${local.name}-origin-dns"
   retention_in_days = var.log_retention_days
 }
 
 resource "aws_lambda_function" "origin_dns" {
+  count            = var.enable_cdn ? 1 : 0
   function_name    = "${local.name}-origin-dns"
-  role             = aws_iam_role.origin_dns.arn
-  filename         = data.archive_file.origin_dns.output_path
-  source_code_hash = data.archive_file.origin_dns.output_base64sha256
+  role             = aws_iam_role.origin_dns[0].arn
+  filename         = data.archive_file.origin_dns[0].output_path
+  source_code_hash = data.archive_file.origin_dns[0].output_base64sha256
   handler          = "origin_dns.handler"
   runtime          = "python3.13"
   architectures    = ["arm64"]
@@ -90,7 +98,7 @@ resource "aws_lambda_function" "origin_dns" {
 
   environment {
     variables = {
-      HOSTED_ZONE_ID = data.aws_route53_zone.this.zone_id
+      HOSTED_ZONE_ID = data.aws_route53_zone.this[0].zone_id
       ORIGIN_RECORD  = local.origin_domain
       RECORD_TTL     = "60"
     }
@@ -104,6 +112,7 @@ resource "aws_lambda_function" "origin_dns" {
 # desiredStatus STOPPED for a moment, and acting on that would point the record
 # at the task that is going away.
 resource "aws_cloudwatch_event_rule" "task_running" {
+  count       = var.enable_cdn ? 1 : 0
   name        = "${local.name}-task-running"
   description = "ECS task reached RUNNING -- repoint the origin record"
 
@@ -119,32 +128,34 @@ resource "aws_cloudwatch_event_rule" "task_running" {
 }
 
 resource "aws_cloudwatch_event_target" "origin_dns" {
-  rule      = aws_cloudwatch_event_rule.task_running.name
+  count     = var.enable_cdn ? 1 : 0
+  rule      = aws_cloudwatch_event_rule.task_running[0].name
   target_id = "origin-dns"
-  arn       = aws_lambda_function.origin_dns.arn
+  arn       = aws_lambda_function.origin_dns[0].arn
 }
 
 resource "aws_lambda_permission" "events" {
+  count         = var.enable_cdn ? 1 : 0
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.origin_dns.function_name
+  function_name = aws_lambda_function.origin_dns[0].function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.task_running.arn
+  source_arn    = aws_cloudwatch_event_rule.task_running[0].arn
 }
 
 # ── the public records ──────────────────────────────────────────────────────
 resource "aws_route53_record" "site" {
-  for_each = toset(distinct([local.site_domain, "www.${var.domain_name}"]))
+  for_each = var.enable_cdn ? toset(distinct([local.site_domain, "www.${var.domain_name}"])) : toset([])
 
-  zone_id = data.aws_route53_zone.this.zone_id
+  zone_id = data.aws_route53_zone.this[0].zone_id
   name    = each.value
   type    = "A"
 
   # An alias, not a CNAME: Route 53 charges nothing for alias queries to a
   # CloudFront distribution, and an apex domain cannot hold a CNAME at all.
   alias {
-    name                   = aws_cloudfront_distribution.site.domain_name
-    zone_id                = aws_cloudfront_distribution.site.hosted_zone_id
+    name                   = aws_cloudfront_distribution.site[0].domain_name
+    zone_id                = aws_cloudfront_distribution.site[0].hosted_zone_id
     evaluate_target_health = false
   }
 }
