@@ -44,6 +44,16 @@ itself is gitignored and must never be committed.
 | `PORT` | Host port the container publishes on. Defaults to 5003. |
 | `DEV_RELOAD` | Hot-reloads templates and stops caching static assets. Local only. |
 | `SHOW_PAGE_TITLE` | Big serif page headings on or off. |
+| `S3_BUCKET` | Set it and uploads go to S3; leave it empty and they go to disk. |
+| `S3_REGION` | Bucket region. `us-east-2` for `thelabratrace-assets`. |
+| `S3_PUBLIC_BASE_URL` | CDN or public bucket origin. Empty means presigned URLs. |
+| `S3_URL_EXPIRY_SECONDS` | Lifetime of a presigned URL. Default one hour. |
+| `S3_OBJECT_ACL` | Only for buckets that still have ACLs enabled. Usually empty. |
+
+AWS keys are deliberately **not** in that table. boto3 reads
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from the environment, `~/.aws`,
+or an instance role, so no credential ever has to sit in a file this repo can
+see. `config.py` never reads one.
 
 ## Seeding content
 
@@ -130,6 +140,76 @@ Two consequences worth knowing:
 * **`app/static/images/stress/` is not committed.** It is 19 MB of synthetic
   imagery that is reproducible in one command. After regenerating it, re-run
   the variant tool so the manifest matches what is on disk.
+
+## Asset hosting
+
+Images, video and audio live in the `thelabratrace-assets` S3 bucket, laid out
+`<Category>/<Application>/<Section>/...` so one bucket can serve more than this
+site:
+
+    Images/Portfolio-Site/Blog/2026/08/30/gpu-passthrough-proxmox/cover.webp
+    Images/Portfolio-Site/Projects/Work/2026/08/30/splunk-pipeline/rack.webp
+    Images/Portfolio-Site/Projects/SideQuests/...
+    Images/Portfolio-Site/Home/            # no date; the page has one set
+    Images/Portfolio-Site/Contact/
+
+`app/services/assets.py` is the only place that knows this layout. Dated
+sections put `YYYY/MM/DD` before the slug so a prefix listing is chronological
+without a sort and two posts published the same day cannot collide -- S3 has no
+directories, so a second post on the same day needs no check, it just writes a
+key that shares the first eight segments.
+
+**Every post and project gets a prefix when it is created**, upload or no
+upload, stored in `asset_prefix` as the category-less tail
+(`Portfolio-Site/Blog/2026/08/30/slug`). One column answers for all three
+categories; `row.asset_prefixes` puts `Images/`, `Video/` and `Audio/` back.
+A `before_insert` hook assigns it, so the admin form, the CLI and a seed
+script all behave the same. A prefix is never reassigned: objects already sit
+under it, and rewriting the column on a rename would orphan them.
+
+### Two backends, one column
+
+| `S3_BUCKET` | uploads go to | database stores |
+|---|---|---|
+| set | the bucket, under the row's prefix | `s3:Images/Portfolio-Site/...` |
+| empty | `app/static/images/uploads/` | `uploads/<token>.webp` |
+
+The `s3:` marker is what lets one `VARCHAR(500)` hold both, so rows written
+before this feature existed still resolve and nothing had to be migrated.
+Templates call `asset_url(path)` and never `url_for('static', ...)` -- adding a
+third backend later is one function, not five templates.
+
+A fresh checkout with no AWS account gets the local backend and everything
+works, which is also what CI and the test suite use (`TestingConfig` pins
+`S3_BUCKET` empty so a developer with the variable exported cannot make the
+suite upload to a real bucket).
+
+### Seeding the bucket
+
+```bash
+docker compose exec -T web python tools/seed_s3_placeholders.py --check
+docker compose exec -T web python tools/seed_s3_placeholders.py --dry-run
+docker compose exec -T web python tools/seed_s3_placeholders.py --commit
+```
+
+`--check` probes list, put and delete and stops. Nothing is written without
+`--commit`, and re-running skips objects that are already there.
+
+The IAM user needs, at minimum:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::thelabratrace-assets" },
+    { "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::thelabratrace-assets/*" }
+  ]
+}
+```
 
 ## Testing
 

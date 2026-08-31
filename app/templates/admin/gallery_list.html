@@ -19,7 +19,7 @@
         <tr>
             <td class="admin-cell-thumb">
                 {% if img.path %}
-                <img src="{{ url_for('static', filename='images/' + img.path) }}"
+                <img src="{{ asset_url(img.path) }}"
                      alt="" loading="lazy" decoding="async">
                 {% else %}
                 <span class="admin-cell-muted">—</span>

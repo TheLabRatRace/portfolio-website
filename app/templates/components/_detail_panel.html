@@ -45,7 +45,7 @@
                          page:    min(860px, 90vw) -> 394px, or 45vw - 36px #}
                     {% set srcset = image_srcset(img.path) %}
                     <img class="panel-gallery-img"
-                         src="{{ url_for('static', filename='images/' + img.path) }}"
+                         src="{{ asset_url(img.path) }}"
                          {%- if srcset %}
                          srcset="{{ srcset }}"
                          {%- if page_mode %}

@@ -1,10 +1,13 @@
+from app.models.assets import AssetPrefixMixin, tracks_assets
 from app.models.search import search_vector_column
 from app.models.tag import project_tags
 
 from app.extensions import db
+from app.services import section_for_project
 
 
-class Project(db.Model):
+@tracks_assets
+class Project(AssetPrefixMixin, db.Model):
     __tablename__ = "projects"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -64,6 +67,16 @@ class Project(db.Model):
     @property
     def downloads(self):
         return [a for a in self.attachments if a.category == "download"]
+
+    # ── Assets ──
+    def asset_section(self):
+        """Work or SideQuests, following `type`.
+
+        Not Project-Gallery: that page is a view over both, so filing a
+        project's images there would store them a second time under a name
+        that says less about where they came from.
+        """
+        return section_for_project(self.type) or "work"
 
     def __repr__(self):
         return f"<Project {self.slug}>"

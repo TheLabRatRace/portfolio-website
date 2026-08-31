@@ -8,7 +8,7 @@
        640, 2 under 900, 3 above ((1200 - 120 - 40) / 3 = 347). Keep in step. #}
     {% set srcset = image_srcset(img.path) %}
     <img class="gallery-img"
-         src="{{ url_for('static', filename='images/' + img.path) }}"
+         src="{{ asset_url(img.path) }}"
          {%- if srcset %}
          srcset="{{ srcset }}"
          sizes="(max-width: 640px) calc(100vw - 40px),

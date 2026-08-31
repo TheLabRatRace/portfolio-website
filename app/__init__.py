@@ -28,6 +28,7 @@ def create_app(config_name="development"):
     _register_error_handlers(app)
     _register_template_filters(app)
     _register_image_variants(app)
+    _register_asset_urls(app)
     _register_stylesheet(app)
     _register_hooks(app)
     _register_context(app)
@@ -186,6 +187,22 @@ def _register_image_variants(app):
             url = url_for("static", filename="images/" + name)
             parts.append(f"{url} {width}w")
         return ", ".join(parts)
+
+
+def _register_asset_urls(app):
+    """One way to turn a stored asset value into a URL.
+
+    Templates used to write `url_for('static', filename='images/' + path)` in
+    five places, which was correct while every image was a file in this repo.
+    An asset in S3 is not, so the join moved behind a name: `asset_url(path)`
+    resolves a bare path to the static file it always was, and an `s3:` URI to
+    the bucket. Adding a third backend later is one function, not five
+    templates.
+    """
+    from app.services import resolve
+
+    app.add_template_global(resolve, name="asset_url")
+    app.logger.info("Asset storage: %s", app.config.get("S3_BUCKET") or "local")
 
 
 def _register_stylesheet(app):
