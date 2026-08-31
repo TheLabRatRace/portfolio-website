@@ -1,0 +1,40 @@
+from app.models.search import search_vector_column
+from app.models.tag import post_tags
+
+from app.extensions import db
+
+
+class Post(db.Model):
+    """A blog post, as rows rather than as YAML.
+
+    `date` and `created_at` are separate facts: created_at is when the row was
+    written, date is when the author says it was published. The list orders by
+    the second, so a post can be backdated without lying about the first.
+    """
+
+    __tablename__ = "posts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    slug = db.Column(db.String(200), nullable=False, unique=True)
+    excerpt = db.Column(db.Text)
+    content = db.Column(db.Text, nullable=False)
+    published = db.Column(db.Boolean, default=False)
+    date = db.Column(db.Date)
+    display_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
+    updated_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
+    search_vector = search_vector_column()
+
+    # Same shape as Project._tags: templates want strings, the admin wants Tag
+    # rows, so the relationship is private and `tags` is the reader-facing view.
+    _tags = db.relationship(
+        "Tag", secondary=post_tags, order_by="Tag.name", lazy="selectin",
+    )
+
+    @property
+    def tags(self):
+        return [t.name for t in self._tags]
+
+    def __repr__(self):
+        return f"<Post {self.slug}>"

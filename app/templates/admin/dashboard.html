@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+{% set admin_tab = 'dashboard' %}
+
+{% block admin_content %}
+<div class="admin-stat-grid">
+    <a class="admin-stat" href="{{ url_for('admin.project_list', type='work') }}">
+        <span class="admin-stat-n">{{ counts.work }}</span>
+        <span class="admin-stat-label">work projects</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.project_list', type='sidequest') }}">
+        <span class="admin-stat-n">{{ counts.sidequests }}</span>
+        <span class="admin-stat-label">side quests</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.gallery_list') }}">
+        <span class="admin-stat-n">{{ counts.gallery }}</span>
+        <span class="admin-stat-label">gallery images</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.post_list') }}">
+        <span class="admin-stat-n">{{ counts.posts }}</span>
+        <span class="admin-stat-label">blog posts</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.tag_list') }}">
+        <span class="admin-stat-n">{{ counts.tags }}</span>
+        <span class="admin-stat-label">tags</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.skill_list') }}">
+        <span class="admin-stat-n">{{ counts.skills }}</span>
+        <span class="admin-stat-label">skills</span>
+    </a>
+    <a class="admin-stat" href="{{ url_for('admin.certification_list') }}">
+        <span class="admin-stat-n">{{ counts.certifications }}</span>
+        <span class="admin-stat-label">certifications</span>
+    </a>
+</div>
+
+{% if drafts.projects or drafts.posts %}
+<p class="admin-note">
+    Unpublished and invisible to visitors:
+    {{ drafts.projects }} project{{ '' if drafts.projects == 1 else 's' }},
+    {{ drafts.posts }} post{{ '' if drafts.posts == 1 else 's' }}.
+</p>
+{% endif %}
+
+<div class="admin-actions">
+    <a class="admin-btn admin-btn-primary"
+       href="{{ url_for('admin.project_new', type='work') }}">New work project</a>
+    <a class="admin-btn"
+       href="{{ url_for('admin.project_new', type='sidequest') }}">New side quest</a>
+    <a class="admin-btn" href="{{ url_for('admin.post_new') }}">New post</a>
+</div>
+
+<h3 class="admin-section-title">Recently edited</h3>
+<table class="admin-table">
+    <thead>
+        <tr><th>Title</th><th>Type</th><th>State</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for project in recent %}
+        <tr>
+            <td>{{ project.title }}</td>
+            <td class="admin-cell-muted">{{ project.type }}</td>
+            <td>
+                <span class="admin-pill {{ 'is-live' if project.published else 'is-draft' }}">
+                    {{ 'live' if project.published else 'draft' }}
+                </span>
+            </td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.project_edit', project_id=project.id) }}">Edit</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

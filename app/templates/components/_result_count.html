@@ -1,0 +1,3 @@
+{# How big the set is. Optional `noun` names it, singular; the "s" is added
+   here. Stands in for the tab bar's pager below 1024, which is dropped there. #}
+<span class="result-count">{{ total }} {{ noun|default('project', true) }}{{ '' if total == 1 else 's' }}</span>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeff Fredericks — Ops · Code · Automate</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;0,800;1,700;1,800&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ stylesheet_url() }}">
+</head>
+<body>
+    <div class="grid-texture"></div>
+    <div class="ambient-glow"></div>
+
+    <nav class="site-nav">
+        <a href="{{ url_for('main.home') }}" class="nav-logo">
+            <span class="accent">Jeff</span>
+            <span class="nav-tagline">// ops · code · automate</span>
+        </a>
+        {# The dropdown handle. Always in the markup, hidden by CSS above the
+           breakpoint, so there is no second nav to keep in sync.
+           `aria-expanded` is the state: JS writes it, CSS reads it, a screen
+           reader announces it. #}
+        <button class="nav-toggle" type="button"
+                aria-expanded="false" aria-controls="nav-links" aria-label="Menu">
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+            <a href="{{ url_for('main.home') }}" class="nav-btn {% if active_section == 'home' %}active{% endif %}">home</a>
+            <a href="{{ url_for('projects.index') }}" class="nav-btn {% if active_section == 'projects' %}active{% endif %}">projects</a>
+            <a href="{{ url_for('blog.index') }}" class="nav-btn {% if active_section == 'blog' %}active{% endif %}">blog</a>
+            <a href="{{ url_for('main.contact') }}" class="nav-btn {% if active_section == 'contact' %}active{% endif %}">contact</a>
+
+
+            {# A GET form, so a search is a URL -- shareable, bookmarkable, and
+               working without JavaScript. #}
+            <form class="nav-search" role="search" method="get" action="{{ url_for('search.index') }}">
+                <label class="visually-hidden" for="nav-search-input">Search the site</label>
+                <input id="nav-search-input" class="nav-search-input" type="search"
+                       name="q" value="{{ q if active_section == 'search' else '' }}"
+                       placeholder="search" autocomplete="off" spellcheck="false">
+                <button class="nav-search-btn" type="submit" aria-label="Search">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                        <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                        <line x1="10.4" y1="10.4" x2="14" y2="14" stroke="currentColor"
+                              stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </nav>
+
+    <main>
+        <div class="page-content">
+            {% include "components/_flash.html" %}
+            {% block content %}{% endblock %}
+        </div>
+
+        <footer>
+            Built with intention · © 2026
+        </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,58 @@
+# V2 development stack. Fully isolated from V1: its own compose project,
+# its own database volume, its own port. Seed, stress, and break this one
+# freely -- nothing here can reach the V1 database.
+name: personal_site_v2
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata_v2:/var/lib/postgresql/data
+      # Run once, in name order, only when pgdata_v2 is empty. Delete the
+      # volume to reseed. 02- is the same file a live database is patched
+      # with by hand, so a fresh volume and an existing one end up identical.
+      - ./migrate.sql:/docker-entrypoint-initdb.d/01-migrate.sql:ro
+      - ./schema_admin_search.sql:/docker-entrypoint-initdb.d/02-schema_admin_search.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      # V1 holds 5002. V2 answers on 5003 so both run side by side.
+      - "${PORT:-5003}:5002"
+    environment:
+      FLASK_ENV: production
+      # Local container only: hot-reload templates and stop caching static
+      # assets for a day. The image's own defaults are unchanged.
+      DEV_RELOAD: "1"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres
+      SITE_VERSION: v2
+    volumes:
+      # Live source mount -- edits on the host reach the container without a rebuild.
+      - .:/app
+    # The mount removes the rebuild; --reload removes the restart. Without it
+    # gunicorn keeps serving the modules it imported at boot. Compose is the
+    # local dev environment here -- the image's own CMD stays reload-free.
+    command: >
+      gunicorn --bind 0.0.0.0:5002 --workers 2 --timeout 60 --reload
+      --access-logfile - --error-logfile - run:app
+    depends_on:
+      db:
+        condition: service_healthy
+    # Stress runs peaked at 1.78 GiB unbounded. Cap it so an overloaded
+    # V2 kills its own container instead of the host.
+    mem_limit: 2g
+    restart: unless-stopped
+
+volumes:
+  pgdata_v2:

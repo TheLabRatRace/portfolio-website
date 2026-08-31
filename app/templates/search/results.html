@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="search-page">
+    <div class="section-heading fade-in">
+        <h2>Search</h2>
+        <div class="section-heading-bar"></div>
+    </div>
+
+    {# The page's subject, focused on arrival so a refined query is one
+       keystroke away. #}
+    <form class="search-hero fade-in" role="search"
+          method="get" action="{{ url_for('search.index') }}">
+        <label class="visually-hidden" for="search-hero-input">Search</label>
+        <input id="search-hero-input" class="search-hero-input" type="search" name="q"
+               value="{{ q }}" placeholder="projects, side quests, gallery, posts"
+               autocomplete="off" spellcheck="false" {% if not q %}autofocus{% endif %}>
+        <button class="search-hero-btn" type="submit">Search</button>
+    </form>
+
+    {% if not q %}
+    <p class="search-empty fade-in">
+        Searches titles, descriptions, specs, gallery labels and post bodies.
+        Quote a phrase to match it exactly; prefix a word with
+        <code>-</code> to exclude it.
+    </p>
+    {% elif too_short %}
+    <p class="search-empty fade-in">
+        Two characters or more, please — one letter matches almost everything.
+    </p>
+    {% elif not total %}
+    <p class="search-empty fade-in">
+        Nothing matches <strong>{{ q }}</strong>. Matching is by word stem, so
+        partial words like <code>prox</code> only find tags — try the whole word.
+    </p>
+    {% else %}
+    <p class="search-count fade-in">
+        {{ total }} result{{ '' if total == 1 else 's' }} for <strong>{{ q }}</strong>
+    </p>
+
+    {% if results.tags %}
+    <section class="search-group fade-in">
+        <h3 class="search-group-title">Tags</h3>
+        <div class="search-tag-row">
+            {% for tag in results.tags %}
+            <span class="blog-tag">{{ tag.name }}</span>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {# Work and side quests are the same shape, so they share one block. #}
+    {% for key, heading, endpoint_tab in [
+        ('work', 'Work', 'work'),
+        ('sidequests', 'Side Quests', 'sidequests')] %}
+    {% if results[key] %}
+    <section class="search-group fade-in">
+        <h3 class="search-group-title">
+            {{ heading }}
+            {% if results[key] | length == limit %}
+            <a class="search-group-more"
+               href="{{ url_for('projects.index', tab=endpoint_tab) }}">see all →</a>
+            {% endif %}
+        </h3>
+        <div class="search-hit-list">
+            {% for item in results[key] %}
+            <a class="search-hit" href="{{ url_for('projects.detail', slug=item.slug) }}">
+                <span class="search-hit-title">{{ item.title }}</span>
+                {% if item.description %}
+                <span class="search-hit-snippet">{{ item.description }}</span>
+                {% endif %}
+                {% if item.tags %}
+                <span class="search-hit-tags">
+                    {% for tag in item.tags[:3] %}<span class="blog-tag">{{ tag }}</span>{% endfor %}
+                </span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    {% endfor %}
+
+    {% if results.posts %}
+    <section class="search-group fade-in">
+        <h3 class="search-group-title">
+            Blog
+            {% if results.posts | length == limit %}
+            <a class="search-group-more" href="{{ url_for('blog.index') }}">see all →</a>
+            {% endif %}
+        </h3>
+        <div class="search-hit-list">
+            {% for post in results.posts %}
+            <a class="search-hit" href="{{ url_for('blog.detail', slug=post.slug) }}">
+                <span class="search-hit-title">{{ post.title }}</span>
+                {% if post.excerpt %}
+                <span class="search-hit-snippet">{{ post.excerpt }}</span>
+                {% endif %}
+                {% if post.date %}
+                <span class="search-hit-meta">{{ post.date | format_date }}</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if results.gallery %}
+    <section class="search-group fade-in">
+        <h3 class="search-group-title">
+            Gallery
+            {% if results.gallery | length == limit %}
+            <a class="search-group-more"
+               href="{{ url_for('projects.index', tab='gallery') }}">see all →</a>
+            {% endif %}
+        </h3>
+        <div class="gallery-grid">
+            {% for img in results.gallery %}
+            {% include "components/_gallery_card.html" %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

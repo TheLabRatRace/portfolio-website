@@ -1,0 +1,28 @@
+# Lint configuration for the `lint:ruff` CI job.
+#
+# The repo has no pyproject.toml, so ruff reads this file. The rule set is
+# deliberately the part that is already green: pycodestyle errors and
+# warnings plus pyflakes. A gate that fails on the day it lands teaches
+# people to ignore the gate.
+line-length = 100
+target-version = "py313"
+
+[lint]
+# E/W  pycodestyle    -- syntax-adjacent style, real breakage
+# F    pyflakes       -- undefined names, unused imports, shadowed builtins
+#
+# Deliberately not enabled yet, each because it wants a code change that is
+# not a lint fix and should arrive as its own pull request:
+#   I    -- would reorder the import blocks in app/__init__.py, run.py,
+#           tests/conftest.py
+#   DTZ  -- format_date_filter builds a naive datetime on purpose; the dates
+#           are date-only strings from YAML with no timezone to attach
+#   SIM  -- one nested `if` in tools/gen_image_variants.py
+select = ["E", "F", "W"]
+
+[lint.per-file-ignores]
+# Blueprint packages import their routes module at the bottom of __init__.py
+# to register the routes; that is the documented Flask pattern, not a stray
+# import. (E402 is not in the selected set today -- this keeps the exemption
+# recorded for when `I`/`E402` are turned on.)
+"app/blueprints/*/__init__.py" = ["E402", "F401"]

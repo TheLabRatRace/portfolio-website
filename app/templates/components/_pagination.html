@@ -1,0 +1,46 @@
+{# Pagination control.
+   Expects: pagination (a Flask-SQLAlchemy Pagination), param (the page query
+   arg this control drives), and page_url (callable from the view). Optional
+   `label` names the nav -- a tab renders this twice, and two <nav>s both
+   announcing "Pagination" are indistinguishable to a screen reader.
+
+   Prev/Next split the arrow and the word into separate spans so a tight host
+   can drop the word; aria-label carries the meaning either way. #}
+{% if pagination.pages > 1 %}
+<nav class="pagination" aria-label="{{ label|default('Pagination', true) }}">
+    {% if pagination.has_prev %}
+    <a class="page-btn page-btn--step" href="{{ page_url(**{param: pagination.prev_num}) }}"
+       rel="prev" aria-label="Previous page"><span class="page-arrow">←</span><span class="page-word">Prev</span></a>
+    {% else %}
+    <span class="page-btn page-btn--step disabled" aria-disabled="true"
+          aria-label="Previous page"><span class="page-arrow">←</span><span class="page-word">Prev</span></span>
+    {% endif %}
+
+    {% for p in pagination.iter_pages(left_edge=1, left_current=1, right_current=2, right_edge=1) %}
+        {% if p %}
+            {% if p == pagination.page %}
+            <span class="page-btn active" aria-current="page">{{ p }}</span>
+            {% else %}
+            <a class="page-btn" href="{{ page_url(**{param: p}) }}">{{ p }}</a>
+            {% endif %}
+        {% else %}
+        <span class="page-gap">…</span>
+        {% endif %}
+    {% endfor %}
+
+    {# The position readout. On a phone the numbered chips are not drawn, and
+       `display:none` takes the aria-current chip out of the accessibility tree
+       too, so this is the only thing saying where in the set you are. #}
+    <span class="page-pos">{{ pagination.page }} / {{ pagination.pages }}</span>
+
+    {% if pagination.has_next %}
+    <a class="page-btn page-btn--step" href="{{ page_url(**{param: pagination.next_num}) }}"
+       rel="next" aria-label="Next page"><span class="page-word">Next</span><span class="page-arrow">→</span></a>
+    {% else %}
+    <span class="page-btn page-btn--step disabled" aria-disabled="true"
+          aria-label="Next page"><span class="page-word">Next</span><span class="page-arrow">→</span></span>
+    {% endif %}
+
+    <span class="page-count">{{ pagination.total }} total</span>
+</nav>
+{% endif %}

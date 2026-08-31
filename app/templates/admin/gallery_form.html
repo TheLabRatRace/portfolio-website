@@ -1,0 +1,39 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field %}
+{% set admin_tab = 'gallery' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">{{ image.label }}</h3>
+    <a class="admin-btn admin-btn-quiet"
+       href="{{ url_for('admin.project_edit', project_id=image.project_id) }}">
+        {{ image.project.title }} →
+    </a>
+</div>
+
+{% if image.path %}
+<div class="admin-preview">
+    <img src="{{ url_for('static', filename='images/' + image.path) }}"
+         alt="{{ image.label }}" loading="lazy" decoding="async">
+</div>
+{% endif %}
+
+<form class="admin-form" method="post" enctype="multipart/form-data" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.label) }}
+        {{ field(form.display_order) }}
+        {{ field(form.upload, cls="admin-input admin-file") }}
+        {{ field(form.image_path) }}
+    </div>
+    <p class="admin-hint">
+        Uploading replaces the file. Leaving both blank clears the image and
+        the card falls back to its placeholder.
+    </p>
+    <div class="admin-actions">
+        {{ form.submit(class="admin-btn admin-btn-primary") }}
+        <a class="admin-btn admin-btn-quiet"
+           href="{{ url_for('admin.gallery_list') }}">Back</a>
+    </div>
+</form>
+{% endblock %}

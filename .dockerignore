@@ -1,0 +1,47 @@
+# Virtualenvs — never ship a host-built env into the image
+venv/
+.venv/
+
+# Secrets and local env
+.env
+agent-guidance/
+
+# Python bytecode / test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime output
+logs/
+instance/
+
+# VCS and editor noise
+.git/
+.gitignore
+.DS_Store
+.claude/
+.kiro/
+
+# Legacy source — the React original this app was ported from
+portfolio.jsx
+
+# CI, lint and repo-metadata config — build-time and review-time only,
+# nothing in the running container reads any of it.
+.gitlab-ci.yml
+.gitlab/
+.gitattributes
+.editorconfig
+ruff.toml
+.ruff_cache/
+README.md
+CONTRIBUTING.md
+SECURITY.md
+
+# Generated stress imagery. 19 MB of synthetic files that no reachable page
+# references; regenerate them locally instead of baking them into the image.
+app/static/images/stress/
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+docker-compose.yml

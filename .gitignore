@@ -1,0 +1,86 @@
+# ── Secrets ──────────────────────────────────────────────────────────────
+# Nothing in this block is ever committed. .env.example is the only file
+# that describes these variables, and it holds placeholders exclusively.
+.env
+.env.*
+!.env.example
+
+# Private agent notes. The sibling V1 checkout keeps plaintext credentials
+# in this directory, so the pattern is ignored here by name rather than by
+# what happens to be in it today. Mirrors .dockerignore.
+agent-guidance/
+
+# Keys, certificates, and anything that looks like one.
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+*.kdbx
+creds.txt
+credentials.*
+secrets.*
+*.secret
+
+# AWS. The console hands you the secret access key exactly once, as a CSV
+# download whose name it chooses -- so the pattern matches the name the
+# console generates, not the one file that happens to be here today.
+*accessKeys*.csv
+*accessKeys*.csv.*
+*credentials*.csv
+aws_credentials*
+.aws/
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# ── Runtime output ───────────────────────────────────────────────────────
+logs/
+instance/
+*.bak
+
+# ── Generated images ─────────────────────────────────────────────────────
+# 2,000 files / 19 MB of synthetic stress-test imagery, produced by
+# tools/seed_stress.py and tools/gen_image_variants.py. It is reproducible
+# in one command and belongs to no page a visitor can reach, so it stays
+# out of history. The real portfolio images at the top of images/ -- source
+# plus their -NNNw srcset variants, 48 KB in total -- are committed, and so
+# is variants.json, because the runtime image has no cwebp to rebuild it.
+#
+# After regenerating the stress corpus, re-run the variant tool so the
+# manifest matches what is on disk:
+#     python tools/gen_image_variants.py --prune
+app/static/images/stress/
+
+# Admin uploads. The files are content, not source: they arrive through
+# /admin at runtime and belong in a backup of the volume, not in a commit
+# that every clone then has to carry.
+app/static/images/uploads/
+
+# ── Editor / OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local-only tool state; the shared .claude/skills/ stays tracked.
+.claude/settings.local.json

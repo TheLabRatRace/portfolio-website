@@ -1,0 +1,48 @@
+{# Field rendering, in one place: label, widget, errors. Written out per
+   template, one of them ends up missing its error block and silently
+   swallowing a validation message. #}
+
+{% macro field(f, rows=None, cls="admin-input") %}
+<div class="admin-field">
+    {{ f.label }}
+    {% if rows %}{{ f(class=cls, rows=rows) }}{% else %}{{ f(class=cls) }}{% endif %}
+    {% if f.description %}<span class="admin-hint">{{ f.description }}</span>{% endif %}
+    {% for error in f.errors %}<span class="admin-error">{{ error }}</span>{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro check(f) %}
+<label class="admin-check">
+    {{ f() }} <span>{{ f.label.text }}</span>
+    {% for error in f.errors %}<span class="admin-error">{{ error }}</span>{% endfor %}
+</label>
+{% endmacro %}
+
+{# A delete is a POST with a token and a confirm(), never a link. `confirm`
+   is the shared empty form that carries the CSRF token. #}
+{% macro delete_button(action, confirm, what, label="Delete") %}
+<form class="admin-inline-form" method="post" action="{{ action }}"
+      onsubmit="return confirm('Delete {{ what|e }}? This cannot be undone.');">
+    {{ confirm.hidden_tag() }}
+    <button class="admin-btn admin-btn-danger" type="submit">{{ label }}</button>
+</form>
+{% endmacro %}
+
+{# `params` is a dict rather than **kwargs -- Jinja accepts ** at a call site
+   but not in a macro signature -- so the query args that must survive a page
+   change (which tab, which filter) travel as one mapping. #}
+{% macro pager(page, endpoint, params={}) %}
+{% if page.pages > 1 %}
+<nav class="admin-pager" aria-label="Pagination">
+    {% if page.has_prev %}
+    <a class="admin-btn admin-btn-quiet"
+       href="{{ url_for(endpoint, page=page.prev_num, **params) }}">← Prev</a>
+    {% endif %}
+    <span class="admin-pager-state">{{ page.page }} / {{ page.pages }}</span>
+    {% if page.has_next %}
+    <a class="admin-btn admin-btn-quiet"
+       href="{{ url_for(endpoint, page=page.next_num, **params) }}">Next →</a>
+    {% endif %}
+</nav>
+{% endif %}
+{% endmacro %}

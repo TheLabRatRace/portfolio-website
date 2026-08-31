@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field, delete_button %}
+{% set admin_tab = 'certifications' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">Certifications <span class="admin-count">{{ certs | length }}</span></h3>
+    <span class="admin-hint">
+        Status drives the colour of the dot beside each row: active is green,
+        in progress is the accent, expired is grey.
+    </span>
+</div>
+
+<form class="admin-subform" method="post"
+      action="{{ url_for('admin.certification_list', edit=editing.id if editing else None) }}">
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.name) }}
+        {{ field(form.issuer) }}
+        {{ field(form.status) }}
+        {{ field(form.year) }}
+        {{ field(form.display_order) }}
+    </div>
+    <button class="admin-btn" type="submit">{{ 'Save changes' if editing else 'Add certification' }}</button>
+    {% if editing %}
+    <a class="admin-btn admin-btn-quiet" href="{{ url_for('admin.certification_list') }}">Cancel</a>
+    {% endif %}
+</form>
+
+<table class="admin-table">
+    <thead><tr><th>Name</th><th>Issuer</th><th>Status</th><th>Year</th><th></th></tr></thead>
+    <tbody>
+        {% for cert in certs %}
+        <tr>
+            <td>{{ cert.name }}</td>
+            <td class="admin-cell-muted">{{ cert.issuer }}</td>
+            <td>
+                <span class="cert-status-dot {{ cert.status }}"></span>
+                <span class="admin-cell-muted">{{ cert.status.replace('_', ' ') }}</span>
+            </td>
+            <td class="admin-cell-muted">{{ cert.year or '—' }}</td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.certification_list', edit=cert.id) }}">Edit</a>
+                {{ delete_button(url_for('admin.certification_delete', cert_id=cert.id), confirm, cert.name) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="admin-cell-muted">No certifications yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

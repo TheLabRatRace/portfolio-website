@@ -1,0 +1,55 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import delete_button, pager %}
+{% set admin_tab = kind if kind == 'work' else 'sidequest' %}
+{% set heading = 'Work' if kind == 'work' else 'Side Quests' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">{{ heading }} <span class="admin-count">{{ page.total }}</span></h3>
+    <form class="admin-filter" method="get">
+        <input type="hidden" name="type" value="{{ kind }}">
+        <input class="admin-input admin-input-inline" type="search" name="q"
+               value="{{ q }}" placeholder="filter by title">
+        <button class="admin-btn admin-btn-quiet" type="submit">Filter</button>
+        {% if q %}<a class="admin-btn admin-btn-quiet"
+                     href="{{ url_for('admin.project_list', type=kind) }}">Clear</a>{% endif %}
+    </form>
+    <a class="admin-btn admin-btn-primary"
+       href="{{ url_for('admin.project_new', type=kind) }}">New</a>
+</div>
+
+<table class="admin-table">
+    <thead>
+        <tr><th>Order</th><th>Title</th><th>Category</th><th>Tags</th><th>State</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for project in page.items %}
+        <tr>
+            <td class="admin-cell-num">{{ project.display_order }}</td>
+            <td>
+                <a class="admin-link"
+                   href="{{ url_for('admin.project_edit', project_id=project.id) }}">{{ project.title }}</a>
+                <span class="admin-cell-muted">/{{ project.slug }}</span>
+            </td>
+            <td class="admin-cell-muted">{{ project.category or '—' }}</td>
+            <td class="admin-cell-muted">{{ project.tags[:3] | join(', ') or '—' }}</td>
+            <td>
+                <span class="admin-pill {{ 'is-live' if project.published else 'is-draft' }}">
+                    {{ 'live' if project.published else 'draft' }}
+                </span>
+            </td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.project_edit', project_id=project.id) }}">Edit</a>
+                {{ delete_button(url_for('admin.project_delete', project_id=project.id),
+                                 confirm, project.title) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="admin-cell-muted">Nothing here yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{{ pager(page, 'admin.project_list', {'type': kind, 'q': q or none}) }}
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field, check, delete_button %}
+{% set admin_tab = kind if kind == 'work' else 'sidequest' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">
+        {{ project.title if project else ('New ' + ('work project' if kind == 'work' else 'side quest')) }}
+    </h3>
+    {% if project %}
+    <a class="admin-btn admin-btn-quiet" target="_blank" rel="noopener"
+       href="{{ url_for('projects.detail', slug=project.slug) }}">View →</a>
+    {% endif %}
+</div>
+
+<form class="admin-form" method="post" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.title) }}
+        {{ field(form.slug) }}
+        {{ field(form.category) }}
+        {{ field(form.status) }}
+        {{ field(form.display_order) }}
+        {{ field(form.tags) }}
+    </div>
+    {{ field(form.description, rows=3, cls="admin-input admin-textarea") }}
+    {{ field(form.long_description, rows=8, cls="admin-input admin-textarea") }}
+    {{ field(form.specs, rows=5, cls="admin-input admin-textarea") }}
+    {{ check(form.published) }}
+    <div class="admin-actions">
+        {{ form.submit(class="admin-btn admin-btn-primary") }}
+        <a class="admin-btn admin-btn-quiet"
+           href="{{ url_for('admin.project_list', type=kind) }}">Back</a>
+    </div>
+</form>
+
+{# Gallery images and attachments need a project id, so on a new project the
+   forms are absent rather than present and broken. #}
+{% if project %}
+<h3 class="admin-section-title">Gallery images <span class="admin-count">{{ project.gallery_images | length }}</span></h3>
+<table class="admin-table">
+    <tbody>
+        {% for img in project.gallery_images %}
+        <tr>
+            <td class="admin-cell-num">{{ img.display_order }}</td>
+            <td class="admin-cell-thumb">
+                {% if img.path %}
+                <img src="{{ url_for('static', filename='images/' + img.path) }}"
+                     alt="" loading="lazy" decoding="async">
+                {% else %}
+                <span class="admin-cell-muted">no file</span>
+                {% endif %}
+            </td>
+            <td>{{ img.label }}<span class="admin-cell-muted"> {{ img.path or '' }}</span></td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.gallery_edit', image_id=img.id) }}">Edit</a>
+                {{ delete_button(url_for('admin.gallery_delete', image_id=img.id),
+                                 confirm, img.label) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td class="admin-cell-muted">No images yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<form class="admin-subform" method="post" enctype="multipart/form-data"
+      action="{{ url_for('admin.gallery_add', project_id=project.id) }}">
+    {{ gallery_form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(gallery_form.label) }}
+        {{ field(gallery_form.upload, cls="admin-input admin-file") }}
+        {{ field(gallery_form.image_path) }}
+        {{ field(gallery_form.display_order) }}
+    </div>
+    <button class="admin-btn" type="submit">Add image</button>
+</form>
+
+<h3 class="admin-section-title">Documents &amp; downloads <span class="admin-count">{{ project.attachments | length }}</span></h3>
+<table class="admin-table">
+    <tbody>
+        {% for att in project.attachments %}
+        <tr>
+            <td class="admin-cell-num">{{ att.display_order }}</td>
+            <td class="admin-cell-muted">{{ att.category }}</td>
+            <td>{{ att.name }}<span class="admin-cell-muted"> {{ att.url }}</span></td>
+            <td class="admin-cell-actions">
+                {{ delete_button(url_for('admin.attachment_delete', attachment_id=att.id),
+                                 confirm, att.name) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td class="admin-cell-muted">Nothing attached.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<form class="admin-subform" method="post"
+      action="{{ url_for('admin.attachment_add', project_id=project.id) }}">
+    {{ attachment_form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(attachment_form.category) }}
+        {{ field(attachment_form.name) }}
+        {{ field(attachment_form.url) }}
+        {{ field(attachment_form.file_type) }}
+        {{ field(attachment_form.file_size) }}
+        {{ field(attachment_form.display_order) }}
+    </div>
+    <button class="admin-btn" type="submit">Add attachment</button>
+</form>
+
+<div class="admin-danger-zone">
+    {{ delete_button(url_for('admin.project_delete', project_id=project.id),
+                     confirm, project.title, 'Delete this project') }}
+    <span class="admin-hint">
+        Its gallery images and attachments go with it. The uploaded files stay on disk.
+    </span>
+</div>
+{% endif %}
+{% endblock %}

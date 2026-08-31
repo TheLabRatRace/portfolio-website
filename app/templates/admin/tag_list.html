@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field, delete_button %}
+{% set admin_tab = 'tags' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">Tags <span class="admin-count">{{ tags | length }}</span></h3>
+    <span class="admin-hint">
+        Tags typed into a project or post are created automatically — this page
+        is for renaming and colouring them.
+    </span>
+</div>
+
+<form class="admin-subform" method="post">
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.name) }}
+        {{ field(form.slug) }}
+        {{ field(form.color) }}
+    </div>
+    <button class="admin-btn" type="submit">Add tag</button>
+</form>
+
+<table class="admin-table">
+    <thead><tr><th>Name</th><th>Slug</th><th>Colour</th><th></th></tr></thead>
+    <tbody>
+        {% for tag in tags %}
+        <tr>
+            <td>{{ tag.name }}</td>
+            <td class="admin-cell-muted">{{ tag.slug }}</td>
+            <td>
+                {% if tag.color %}
+                <span class="admin-swatch" style="background: {{ tag.color }}"></span>
+                <span class="admin-cell-muted">{{ tag.color }}</span>
+                {% else %}<span class="admin-cell-muted">—</span>{% endif %}
+            </td>
+            <td class="admin-cell-actions">
+                {{ delete_button(url_for('admin.tag_delete', tag_id=tag.id), confirm, tag.name) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="admin-cell-muted">No tags yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,36 @@
+{# Admin chrome. Extends the public base rather than standing alone, so there
+   is one set of fonts, tokens and nav. Everything admin-specific is the strip
+   of sub-navigation below. #}
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-page">
+    <div class="admin-bar">
+        <div class="admin-bar-links">
+            <a class="admin-tab {{ 'active' if admin_tab == 'dashboard' }}"
+               href="{{ url_for('admin.dashboard') }}">Overview</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'work' }}"
+               href="{{ url_for('admin.project_list', type='work') }}">Work</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'sidequest' }}"
+               href="{{ url_for('admin.project_list', type='sidequest') }}">Side Quests</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'gallery' }}"
+               href="{{ url_for('admin.gallery_list') }}">Gallery</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'posts' }}"
+               href="{{ url_for('admin.post_list') }}">Blog</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'tags' }}"
+               href="{{ url_for('admin.tag_list') }}">Tags</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'skills' }}"
+               href="{{ url_for('admin.skill_list') }}">Skills</a>
+            <a class="admin-tab {{ 'active' if admin_tab == 'certifications' }}"
+               href="{{ url_for('admin.certification_list') }}">Certs</a>
+        </div>
+        <form class="admin-signout" method="post" action="{{ url_for('admin.logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <span class="admin-whoami">{{ current_user.username }}</span>
+            <button class="admin-btn admin-btn-quiet" type="submit">Sign out</button>
+        </form>
+    </div>
+
+    {% block admin_content %}{% endblock %}
+</div>
+{% endblock %}

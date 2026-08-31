@@ -1,0 +1,112 @@
+{# Detail panel for one project, rendered from two hosts:
+     - projects/_panel_fragment.html  (fetched on click, overlay)
+     - projects/detail.html           (standalone page, page_mode=True)
+
+   `item` is a Project of either type. Work rows carry `category` + relational
+   tags; side quests carry `status` + the specs array. #}
+{% set is_work = item.type == 'work' %}
+{% set chips = item.tags if is_work else (item.specs or []) %}
+{% set dot_class = item.category if is_work else item.status %}
+<div class="detail-panel{% if page_mode %} detail-panel--page{% endif %}" id="panel-{{ item.slug }}"
+     {%- if not page_mode %} role="dialog" aria-modal="true"
+     aria-labelledby="panel-title-{{ item.slug }}" tabindex="-1"{% endif %}>
+    <div class="panel-header">
+        <div class="panel-header-left">
+            <span class="panel-dot {{ dot_class }}"></span>
+            <h2 class="panel-title" id="panel-title-{{ item.slug }}">{{ item.title }}</h2>
+        </div>
+        {% if page_mode %}
+        <a class="panel-close-btn" href="{{ url_for('projects.index') }}">← All projects</a>
+        {% else %}
+        <button class="panel-close-btn" type="button">✕ Close</button>
+        {% endif %}
+    </div>
+    <div class="panel-body">
+        <div class="panel-tags">
+            {% for chip in chips %}
+            <span class="panel-tag">{{ chip }}</span>
+            {% endfor %}
+        </div>
+        <p class="panel-long-desc">{{ item.long_description }}</p>
+
+        {% if item.gallery %}
+        <div class="panel-section">
+            <div class="panel-section-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                <span>Gallery</span>
+            </div>
+            <div class="panel-gallery">
+                {% for img in item.gallery %}
+                {% if img.path %}
+                <div class="panel-gallery-img-wrap">
+                    {# Both hosts are a 2-column grid at 8px gap inside 32px of
+                       padding, but not the same width, so page_mode picks:
+                         overlay: min(560px, 85vw) -> 244px, or 42.5vw - 36px
+                         page:    min(860px, 90vw) -> 394px, or 45vw - 36px #}
+                    {% set srcset = image_srcset(img.path) %}
+                    <img class="panel-gallery-img"
+                         src="{{ url_for('static', filename='images/' + img.path) }}"
+                         {%- if srcset %}
+                         srcset="{{ srcset }}"
+                         {%- if page_mode %}
+                         sizes="(max-width: 955px) calc(45vw - 36px), 394px"
+                         {%- else %}
+                         sizes="(max-width: 658px) calc(42.5vw - 36px), 244px"
+                         {%- endif %}
+                         {%- endif %}
+                         alt="{{ img.label }}"
+                         loading="lazy">
+                    <span class="panel-gallery-img-label">{{ img.label }}</span>
+                </div>
+                {% else %}
+                <div class="gallery-item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                    <span>{{ img.label }}</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if item.documents %}
+        <div class="panel-section">
+            <div class="panel-section-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <span>Documents</span>
+            </div>
+            <div class="panel-file-list">
+                {% for doc in item.documents %}
+                <div class="panel-file-item">
+                    <div>
+                        <div class="panel-file-name">{{ doc.name }}</div>
+                        <div class="panel-file-meta">{{ doc.type }}</div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if item.downloads %}
+        <div class="panel-section">
+            <div class="panel-section-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                <span>Downloads</span>
+            </div>
+            <div class="panel-file-list">
+                {% for dl in item.downloads %}
+                <div class="panel-file-item">
+                    <div>
+                        <div class="panel-file-name">{{ dl.name }}</div>
+                        <div class="panel-file-meta">{{ dl.type }} · {{ dl.size }}</div>
+                    </div>
+                    <svg class="dl-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>

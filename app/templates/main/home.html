@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="home-page">
+    <div>
+        <div class="fade-in">
+            <div class="terminal-block">
+                <div class="terminal-line">
+                    <span class="prefix">$</span>whoami
+                </div>
+                <div class="terminal-line">
+                    <span class="prefix">→</span>
+                    <span class="accent">Jeff Fredericks</span>
+                     — Technical Operations &amp; Infrastructure Engineer
+                </div>
+            </div>
+        </div>
+
+        <div class="fade-in">
+            <h1 class="hero-title">
+                Building systems <span class="accent italic">that scale</span><br>
+                &amp; automation that <span class="accent2 italic">endures</span>
+            </h1>
+        </div>
+
+        <div class="fade-in">
+            <p class="hero-subtitle">
+                Infrastructure engineer by trade. Python developer by practice.
+                I design resilient systems, write clean automation, and make
+                sure everything keeps running at scale.
+            </p>
+        </div>
+
+        <div class="fade-in">
+            <div class="btn-row">
+                <a href="{{ url_for('projects.index') }}" class="btn-primary">View Projects</a>
+                <a href="{{ url_for('main.contact') }}" class="btn-secondary">Get in Touch</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── About, on the home page ──
+   A sibling of .home-page, not a child: the hero is a centred flex box, and
+   anything inside it gets centred along with it. The id is the only address
+   the about content has now that the separate page is gone. #}
+<section id="about" class="home-about">
+    {% include "components/_about_content.html" %}
+</section>
+{% endblock %}

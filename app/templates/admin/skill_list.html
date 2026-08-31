@@ -1,0 +1,47 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field, delete_button %}
+{% set admin_tab = 'skills' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">Skills <span class="admin-count">{{ skills | length }}</span></h3>
+    <span class="admin-hint">
+        The grid on the home page. A group appears where its first skill does,
+        so display order sets the order of the headings as well as the rows.
+    </span>
+</div>
+
+<form class="admin-subform" method="post"
+      action="{{ url_for('admin.skill_list', edit=editing.id if editing else None) }}">
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.category) }}
+        {{ field(form.name) }}
+        {{ field(form.display_order) }}
+    </div>
+    <button class="admin-btn" type="submit">{{ 'Save changes' if editing else 'Add skill' }}</button>
+    {% if editing %}
+    <a class="admin-btn admin-btn-quiet" href="{{ url_for('admin.skill_list') }}">Cancel</a>
+    {% endif %}
+</form>
+
+<table class="admin-table">
+    <thead><tr><th>Group</th><th>Skill</th><th>Order</th><th></th></tr></thead>
+    <tbody>
+        {% for skill in skills %}
+        <tr>
+            <td class="admin-cell-muted">{{ skill.category }}</td>
+            <td>{{ skill.name }}</td>
+            <td class="admin-cell-muted">{{ skill.display_order }}</td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.skill_list', edit=skill.id) }}">Edit</a>
+                {{ delete_button(url_for('admin.skill_delete', skill_id=skill.id), confirm, skill.name) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="admin-cell-muted">No skills yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

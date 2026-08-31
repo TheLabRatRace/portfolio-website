@@ -1,2 +1,236 @@
-# portfolio-website
-My Portfolio Website + CICD Preparation
+# personal_site_v2
+
+A development copy of the portfolio site, fully isolated from V1. Break this one.
+
+## Why it exists
+
+V1 (`../personal_site`) is the real site and holds only its original content:
+11 projects seeded from `migrate.sql`. Scale experiments, content generation,
+and redesign work happen here instead, so V1's data is never touched.
+
+## Isolation boundaries
+
+| | V1 | V2 |
+|---|---|---|
+| directory | `../personal_site` | `.` |
+| compose project | `personal_site` | `personal_site_v2` |
+| database volume | `personal_site_pgdata` | `personal_site_v2_pgdata_v2` |
+| host port | 5002 | 5003 |
+| memory limit | none | 2 GiB |
+| stress tooling | none | `tools/seed_stress.py` |
+| stress images | none | `app/static/images/stress/` (400 files, not committed) |
+
+The two stacks share no volume, no network, and no container. A `docker compose`
+command run in this directory cannot reach V1's database.
+
+## Running
+
+    cp .env.example .env             # then edit it; see Configuration below
+    docker compose up -d --build     # http://localhost:5003
+
+Both sites can run at once; compare them side by side on 5002 and 5003.
+
+## Configuration
+
+Every setting is an environment variable. `.env.example` lists all of them with
+placeholder values and is the only file in the repo that mentions them; `.env`
+itself is gitignored and must never be committed.
+
+| variable | purpose |
+|---|---|
+| `SECRET_KEY` | Flask session signing. A long random string in any deployment. |
+| `DATABASE_URL` | Postgres DSN. Compose builds this itself from `POSTGRES_PASSWORD`. |
+| `POSTGRES_PASSWORD` | Password for the local `db` service. |
+| `PORT` | Host port the container publishes on. Defaults to 5003. |
+| `DEV_RELOAD` | Hot-reloads templates and stops caching static assets. Local only. |
+| `SHOW_PAGE_TITLE` | Big serif page headings on or off. |
+
+## Seeding content
+
+`migrate.sql` builds the schema and seeds every piece of real content: the 11
+projects, the 5 blog posts, and their tags. `schema_admin_search.sql` adds the
+admin and search schema on top, plus the skills and certifications the About
+section reads. Between them a fresh database is a complete site.
+
+Both run automatically on an empty volume — compose mounts them into
+`/docker-entrypoint-initdb.d`. Nothing else needs loading, and there is no
+importer to remember: every content type lives in Postgres and is edited
+through `/admin`.
+
+    # generate work + sidequest projects with galleries and attachments
+    docker compose exec -T web python - --work 200 --quests 150 < tools/seed_stress.py
+
+    # also point galleries at the 400 real image files
+    docker compose exec -T web python - --work 200 --quests 150 --image-files 400 < tools/seed_stress.py
+
+    # remove everything generated, back to the 11-project seed
+    docker compose exec -T web python - --reset < tools/seed_stress.py
+
+Generated rows carry a `stress-` slug prefix. `--reset` deletes only those,
+cascading to their gallery images and attachments; the original 11 projects
+from `migrate.sql` survive it.
+
+`tools/backfill_image_paths.py` attaches the generated image files to those
+rows so the gallery actually renders, and `--clear` reverses it. It matches on
+the `stress-` prefix, so the real portfolio rows are never touched.
+
+## Admin and search
+
+Everything on the site — work, side quests, gallery images, posts, tags — is
+edited through `/admin`, behind a login. There is no seed user and no default
+password; create the first account yourself:
+
+    docker compose exec -it web flask create-admin
+
+`-it`, not `-T`: the command reads the password from a TTY and refuses to run
+without one, so the password is never a shell argument that lands in history or
+in a process list. Two companions to it:
+
+    docker compose exec -it web flask reset-password <username>
+    docker compose exec -T  web flask list-admins
+
+The whole blueprint is gated by a single `before_request`, so a route added to
+it is protected by default and exposing one takes a deliberate edit. Signing in
+is not sufficient — a user without `is_admin` gets a 403, not a dashboard.
+
+Readers find content through `/search?q=`, which is Postgres full-text search
+over projects, side quests, gallery labels and post bodies. Each table carries
+a generated `search_vector` column with a GIN index (`schema_admin_search.sql`),
+so ranking is `ts_rank` against weights baked in at write time: a title hit
+outranks a summary hit outranks a body hit. Two consequences are worth knowing
+before filing a bug:
+
+* **Matching is by stem, not substring.** `deploying` finds `deploy`; `prox`
+  does not find `Proxmox`. Tags cover the half-typed case separately, through a
+  trigram index, because a tag name is the thing people actually half-type.
+* **Unpublished content is invisible.** Every query filters on `published`, so
+  a draft cannot leak its title through the search box.
+
+Results are grouped by type rather than interleaved, because a relevance score
+is not comparable across tables — a 200-word project and a 2,000-word post
+normalise differently, and one merged list would be sorted by length.
+
+## Images and srcset
+
+Gallery cards are ~347 CSS px wide; the source images are 1135px. Every image
+therefore ships a width ladder, and the browser picks from it:
+
+    python tools/gen_image_variants.py            # write 360/540/720/1080 variants
+    python tools/gen_image_variants.py --prune    # ...and delete orphaned ones
+
+The tool needs `cwebp` (`brew install webp`) and writes
+`app/static/images/variants.json`. `create_app` reads that manifest once at
+startup and exposes it to templates as `image_srcset()`. An image with no entry
+simply gets no `srcset` and still renders from its plain `src`.
+
+Two consequences worth knowing:
+
+* **`variants.json` is committed.** The runtime image has no `cwebp`, so it
+  cannot rebuild the manifest. Regenerate it on the host and commit the result.
+* **`app/static/images/stress/` is not committed.** It is 19 MB of synthetic
+  imagery that is reproducible in one command. After regenerating it, re-run
+  the variant tool so the manifest matches what is on disk.
+
+## Testing
+
+    docker compose exec -T web python -m pytest -q
+
+The suite runs against a real Postgres, not SQLite, and that is deliberate:
+search is a generated `tsvector` column with `websearch_to_tsquery` behind it,
+and none of that exists on another engine. A search suite that passed on SQLite
+would be testing something the site does not ship. It also needs the seed —
+`test_blog_post` asserts a real post returns 200 — so run it against the
+compose stack rather than a bare checkout.
+
+Which means the tests point at your dev database. **No test is allowed to leave
+a row behind.** The `db_session` fixture in `tests/conftest.py` runs each test
+inside a transaction that is always rolled back, and every test that writes
+takes that fixture. Binding it correctly is subtler than it looks: Flask-
+SQLAlchemy 3.1 overrides `Session.get_bind()` to resolve the engine from
+`db.engines`, so a bind passed to `session.configure()` is silently ignored and
+the session keeps writing to the real database — a green suite that quietly
+seeds your dev data. Swapping the entry in `db.engines` is what actually
+redirects it. If you add a fixture that writes, verify the row counts are
+unchanged afterwards rather than trusting that it rolled back.
+
+| file | covers |
+|---|---|
+| `tests/test_routes.py` | the public pages answer |
+| `tests/test_auth.py` | the credential check, the session, `?next=` open-redirect refusal, CSRF |
+| `tests/test_admin.py` | the authorisation gate, and that editing writes what the form says |
+| `tests/test_search.py` | ranking, stemming, hostile input, and that drafts stay invisible |
+
+`TestingConfig` disables CSRF so tests can post forms without fetching a token
+first; `test_csrf_is_enforced_when_enabled` turns it back on and checks a
+tokenless POST is rejected, because a protection only ever switched off in
+tests is a protection nobody has tested.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main`, every tag, and every
+pull request:
+
+| job | what it proves |
+|---|---|
+| `secret scan` | nothing credential-shaped is anywhere in the history — gitleaks, run with `--redact` so a finding is reported without reprinting the secret |
+| `lint (ruff)` | `ruff check` over `app`, `config.py`, `run.py`, `tools`, `tests`, reported as inline annotations on the diff |
+| `lint (templates)` | every one of the 32 Jinja templates compiles |
+| `lint (deps, advisory)` | `pip-audit` over `requirements.txt` — never blocks |
+| `test (pytest)` | the suite, against a throwaway Postgres seeded exactly as a fresh install is: `migrate.sql` then `schema_admin_search.sql` |
+| `build image` | the Dockerfile builds, the container answers on `/`, the image pushes |
+
+Pushes to `main` and pull requests are separate triggers rather than one
+combined rule, so a branch with an open PR runs the pipeline once, not twice.
+`build image` builds and smoke-tests on a pull request but only pushes to the
+registry from `main` or a tag.
+
+Lint rules live in `ruff.toml`. The selected set (`E`, `F`, `W`) is the part
+that is already green; `I`, `DTZ` and `SIM` are documented there as deferred,
+each because it wants a code change rather than a lint fix.
+
+## Deploying
+
+The pipeline publishes `ghcr.io/thelabratrace/portfolio-website:<short-sha>`,
+plus `:latest` from `main` and `:<tag>` from a tag. Anything the running
+container needs — a real `DATABASE_URL`, a production `SECRET_KEY` — belongs in
+**Settings ▸ Secrets and variables ▸ Actions**, and is referenced by name only.
+No credential is ever written into a file in this repository.
+
+## Known ceilings (measured before the V2 fixes)
+
+Everything on `/projects/` used to be linear in project count, because the
+template pre-rendered a detail panel for every project in one response:
+
+| projects | response | TTFB | last row visible at |
+|---|---|---|---|
+| 11 | 0.10 MB | 0.057s | 0.5s |
+| 511 | 5.51 MB | 0.334s | 18.5s |
+| 3,011 | 32.54 MB | 2.280s | 108.4s |
+| 6,011 | 65.08 MB | 5.168s | 216.4s |
+
+All three root causes have since been fixed in V2:
+
+1. `app/templates/projects/list.html` — the unbounded fade stagger is gone and
+   detail panels are fetched on click from `/projects/panel/<slug>` instead of
+   being rendered inline.
+2. `app/models/` — the three relationships use `lazy="selectin"`, so the
+   cartesian product is gone. `tools/ab_loaders.py` measures the difference.
+3. `app/blueprints/projects/routes.py` — the listing paginates (10 per
+   page, per tab) and `/projects/<slug>` exists as a real route.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go to
+[SECURITY.md](SECURITY.md) instead of the issue tracker.
+
+## Licence
+
+None yet — all rights reserved by default. Add a `LICENSE` file if this
+repository is ever made public.
+
+## Assets
+
+```bash
+# regenerate app/static/css/style.min.css after editing style.css
+python3 tools/minify_css.py
+```

@@ -1,0 +1,51 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import delete_button, pager %}
+{% set admin_tab = 'gallery' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">Gallery <span class="admin-count">{{ page.total }}</span></h3>
+    <span class="admin-hint">
+        Images are added from the project they belong to — every image has an owner.
+    </span>
+</div>
+
+<table class="admin-table">
+    <thead>
+        <tr><th></th><th>Label</th><th>Project</th><th>Order</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for img in page.items %}
+        <tr>
+            <td class="admin-cell-thumb">
+                {% if img.path %}
+                <img src="{{ url_for('static', filename='images/' + img.path) }}"
+                     alt="" loading="lazy" decoding="async">
+                {% else %}
+                <span class="admin-cell-muted">—</span>
+                {% endif %}
+            </td>
+            <td>
+                <a class="admin-link"
+                   href="{{ url_for('admin.gallery_edit', image_id=img.id) }}">{{ img.label }}</a>
+            </td>
+            <td class="admin-cell-muted">
+                <a class="admin-link"
+                   href="{{ url_for('admin.project_edit', project_id=img.project_id) }}">{{ img.project.title }}</a>
+            </td>
+            <td class="admin-cell-num">{{ img.display_order }}</td>
+            <td class="admin-cell-actions">
+                <a class="admin-btn admin-btn-quiet"
+                   href="{{ url_for('admin.gallery_edit', image_id=img.id) }}">Edit</a>
+                {{ delete_button(url_for('admin.gallery_delete', image_id=img.id),
+                                 confirm, img.label) }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="admin-cell-muted">No images yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{{ pager(page, 'admin.gallery_list') }}
+{% endblock %}

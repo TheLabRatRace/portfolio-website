@@ -1,0 +1,257 @@
+# ─────────────────────────────────────────────────────────────────────────
+# personal_site_v2 — GitHub Actions
+#
+# NO SECRET IS EVER WRITTEN IN THIS FILE.
+#
+#   * The test database is an ephemeral service container that lives for the
+#     length of one job. It is started with POSTGRES_HOST_AUTH_METHOD=trust,
+#     so it has no password to leak in the first place.
+#   * SECRET_KEY is generated inside the job with `secrets.token_hex` and
+#     dies with the job.
+#   * Registry access uses the automatic GITHUB_TOKEN, scoped to this
+#     repository and expired when the job ends. `docker/login-action` passes
+#     it on stdin, so it never reaches the log or the runner's process list.
+#   * Anything a real deployment needs (a production DATABASE_URL, a real
+#     SECRET_KEY) belongs in Settings ▸ Secrets and variables ▸ Actions, and
+#     is referenced here only by name.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+# Pushes to main and tags get a run; every other branch is covered by its
+# pull request. Listing both events without this split is how a branch with
+# an open PR runs the whole pipeline twice.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# A newer commit on the same ref makes this run obsolete; don't hold a
+# runner for an answer nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default. The one job that needs more asks for it.
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # ── lint ───────────────────────────────────────────────────────────────
+
+  # Scans the full history for anything that looks like a credential. Given
+  # how easily a .env gets `git add -A`'d, this is the single highest-value
+  # job in the file. --redact means a finding is reported without reprinting
+  # the secret into a log that is world-readable on a public repo.
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --verbose --no-banner
+
+  ruff:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff==0.16.5
+      # `--output-format=github` turns each finding into an inline annotation
+      # on the diff, so a finding lands where the reviewer is already looking.
+      - run: ruff check --output-format=github app config.py run.py tools tests
+
+  # pytest exercises six routes. It does not render the project list's detail
+  # panels, the gallery card, or any of the blog templates, so a Jinja syntax
+  # error in those reaches production as a 500. Compiling every template is
+  # cheap and closes that gap.
+  templates:
+    name: lint (templates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: compile every template
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          from jinja2 import TemplateSyntaxError
+          from app import create_app
+
+          # Compile against the app's own environment, not a bare one: the
+          # factory registers slugify, format_date and image_srcset, and a
+          # plain Environment fails every template that uses them. The factory
+          # touches no database, so this needs no service container.
+          env = create_app("testing").jinja_env
+          root = Path("app/templates")
+          names = sorted(p.relative_to(root).as_posix()
+                         for p in root.rglob("*.html"))
+          failed = []
+          for name in names:
+              try:
+                  env.get_template(name)
+              except TemplateSyntaxError as exc:
+                  failed.append(f"{name}:{exc.lineno}: {exc.message}")
+          for line in failed:
+              print("FAIL", line)
+          print(f"{len(names) - len(failed)}/{len(names)} templates compiled")
+          sys.exit(1 if failed else 0)
+          PY
+
+  # Advisory only. A CVE published against a pinned dependency is worth
+  # knowing about on the next push, but it is not a reason to block an
+  # unrelated pull request at 5pm.
+  deps:
+    name: lint (deps, advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pip-audit
+      - run: pip-audit --requirement requirements.txt --strict --progress-spinner off
+
+  # ── test ───────────────────────────────────────────────────────────────
+
+  pytest:
+    name: test (pytest)
+    runs-on: ubuntu-latest
+    needs: [ruff, templates]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          # Throwaway container on the job's private network, reachable only
+          # by this job, destroyed with it. Trust auth means there is no
+          # password here to commit, mask, or rotate.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        # The runner will not start the job's steps until this passes, which
+        # is why no connect-retry loop is needed before the seed step.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres@localhost:5432/postgres
+      FLASK_ENV: testing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+
+      # Generated per job, never stored. The tests only need a value that
+      # exists; sessions signed with it are discarded seconds later.
+      - name: generate a throwaway SECRET_KEY
+        run: echo "SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> "$GITHUB_ENV"
+
+      # The tests read real rows (/blog/gpu-passthrough-proxmox must be a 200),
+      # so the schema and seed have to be loaded first. psycopg2 is already a
+      # dependency, which saves installing a postgres client just for psql.
+      - name: load schema and seed
+        run: |
+          python - <<'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          conn.autocommit = True
+          with conn.cursor() as cur:
+              # Same two files, same order, as the compose initdb mounts.
+              cur.execute(open("migrate.sql").read())
+              cur.execute(open("schema_admin_search.sql").read())
+              cur.execute("SELECT (SELECT count(*) FROM projects), (SELECT count(*) FROM posts)")
+              print("seeded projects/posts:", cur.fetchone())
+          conn.close()
+          PY
+
+      - run: pytest -q --junitxml=report.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-report
+          path: report.xml
+          retention-days: 7
+
+  # ── build ──────────────────────────────────────────────────────────────
+
+  image:
+    name: build image
+    runs-on: ubuntu-latest
+    needs: [pytest]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR rejects an uppercase path, and the owner here is TheLabRatRace.
+      - name: resolve image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - run: docker build --pull -t "$IMAGE:${GITHUB_SHA::7}" .
+
+      # Smoke-test the image rather than trusting that it built. The container
+      # serves "/" without a database, which is exactly what the Dockerfile's
+      # HEALTHCHECK relies on.
+      - name: smoke test
+        run: |
+          docker run -d --name smoke -p 5002:5002 "$IMAGE:${GITHUB_SHA::7}"
+          for i in $(seq 1 20); do
+            docker exec smoke python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/', timeout=3)" && break
+            sleep 1
+          done
+          docker logs smoke
+          docker rm -f smoke
+
+      # Nothing leaves the runner on a pull request -- the build and the smoke
+      # test are the point there, and an unreviewed branch has no business
+      # publishing a tag other people can pull.
+      - name: log in to ghcr
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: push
+        if: github.event_name != 'pull_request'
+        run: |
+          docker push "$IMAGE:${GITHUB_SHA::7}"
+          # `latest` follows the default branch; a tag pushes its own name too.
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            docker tag "$IMAGE:${GITHUB_SHA::7}" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            docker tag "$IMAGE:${GITHUB_SHA::7}" "$IMAGE:${GITHUB_REF_NAME}"
+            docker push "$IMAGE:${GITHUB_REF_NAME}"
+          fi

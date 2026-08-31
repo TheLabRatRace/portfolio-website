@@ -1,0 +1,36 @@
+{# One gallery card. Expects `img` (a GalleryImage with .project loaded). #}
+{% set owner = img.project %}
+{% set kind = owner.category if owner.type == 'work' else 'quest' %}
+<div class="gallery-card">
+    {% if img.path %}
+    {# `sizes` is the slot the CSS gives this card, so the browser can pick a
+       file before layout. The branches mirror .gallery-grid -- 1 column under
+       640, 2 under 900, 3 above ((1200 - 120 - 40) / 3 = 347). Keep in step. #}
+    {% set srcset = image_srcset(img.path) %}
+    <img class="gallery-img"
+         src="{{ url_for('static', filename='images/' + img.path) }}"
+         {%- if srcset %}
+         srcset="{{ srcset }}"
+         sizes="(max-width: 640px) calc(100vw - 40px),
+                (max-width: 900px) calc((100vw - 120px) / 2),
+                (max-width: 1200px) calc((100vw - 160px) / 3),
+                347px"
+         {%- endif %}
+         alt="{{ img.label }}"
+         loading="lazy"
+         decoding="async">
+    {% else %}
+    <div class="gallery-placeholder {{ 'cat-' + kind if owner.type == 'work' else 'quest' }}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+        </svg>
+        <span class="gallery-placeholder-label">{{ img.label }}</span>
+    </div>
+    {% endif %}
+    <div class="gallery-card-footer">
+        <a class="gallery-source-tag {{ 'cat-' + kind if owner.type == 'work' else 'quest' }}"
+           href="{{ url_for('projects.detail', slug=owner.slug) }}">{{ owner.title }}</a>
+    </div>
+</div>

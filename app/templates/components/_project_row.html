@@ -1,0 +1,22 @@
+{# One work project row. Expects `project`. #}
+<a class="project-row cat-{{ project.category }}"
+   href="{{ url_for('projects.detail', slug=project.slug) }}"
+   data-slug="{{ project.slug }}">
+    <div class="project-row-left">
+        <span class="card-dot"></span>
+        <div class="project-row-text">
+            <h3 class="project-row-title">{{ project.title }}</h3>
+            <p class="project-row-desc">{{ project.description }}</p>
+        </div>
+    </div>
+    <div class="project-row-right">
+        <div class="project-row-tags">
+            {% for tag in project.tags[:3] %}
+            <span class="row-tag">{{ tag }}</span>
+            {% endfor %}
+        </div>
+        <svg class="ext-link-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        </svg>
+    </div>
+</a>

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="projects-page">
+    {% if show_page_title %}
+    <div class="section-heading fade-in">
+        <h2>Projects</h2>
+        <div class="section-heading-bar"></div>
+    </div>
+    {% endif %}
+
+    <div class="fade-in">
+        <div class="sub-tab-bar">
+            {# Anchors, not buttons: the tab is in the URL, so a shared link
+               lands on the right one. JS still switches instantly. #}
+            <div class="sub-tab-group">
+                <a class="sub-tab-btn {{ 'active' if tab == 'work' }}"
+                   href="{{ page_url(tab='work') }}" data-tab="work">Work</a>
+                <a class="sub-tab-btn {{ 'active' if tab == 'sidequests' }}"
+                   href="{{ page_url(tab='sidequests') }}" data-tab="sidequests">Side Quests</a>
+                <a class="sub-tab-btn {{ 'active' if tab == 'gallery' }}"
+                   href="{{ page_url(tab='gallery') }}" data-tab="gallery">Gallery</a>
+            </div>
+
+            {# The bar's right-hand side: which page. One pager per tab, and
+               JS swaps them alongside the panels. #}
+            <div class="sub-tab-pager">
+                <div class="tab-pager {{ 'hidden' if tab != 'work' }}" data-tab="work">
+                    {% with pagination = work, param = 'work_page',
+                            label = 'Work pagination' %}
+                    {% include "components/_pagination.html" %}
+                    {% endwith %}
+                </div>
+                <div class="tab-pager {{ 'hidden' if tab != 'sidequests' }}" data-tab="sidequests">
+                    {% with pagination = quests, param = 'quest_page',
+                            label = 'Side quest pagination' %}
+                    {% include "components/_pagination.html" %}
+                    {% endwith %}
+                </div>
+                <div class="tab-pager {{ 'hidden' if tab != 'gallery' }}" data-tab="gallery">
+                    {% with pagination = gallery, param = 'gallery_page',
+                            label = 'Gallery pagination' %}
+                    {% include "components/_pagination.html" %}
+                    {% endwith %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Work tab -->
+    <div id="tab-work" class="tab-panel {{ 'hidden' if tab != 'work' }}">
+        <div class="fade-in">
+            {# ── The Work tab's controls ──
+               Two groups, not one row of five: category narrows the set, sort
+               reorders it, so they are drawn differently -- chips and text.
+
+               Server-side, or a filter would only sift the ten rows on this
+               page and report "3 results" out of 126. #}
+            <div class="filter-bar">
+                <div class="filter-group">
+                    {% for name in ['all', 'infrastructure', 'code'] %}
+                    <a class="filter-btn {{ 'active' if category == name }}"
+                       href="{{ page_url(category=name, tab='work', work_page=1) }}">{{ name|capitalize }}</a>
+                    {% endfor %}
+                </div>
+
+                <div class="result-line">
+                    {% with total = work.total %}
+                    {% include "components/_result_count.html" %}
+                    {% endwith %}
+                    {# Two options, so both stay on screen. #}
+                    <span class="sort-group">
+                        <span class="sort-label">Sort</span>
+                        <a class="sort-btn {{ 'active' if sort == 'latest' }}"
+                           href="{{ page_url(sort='latest', tab='work', work_page=1) }}">Latest</a>
+                        <a class="sort-btn {{ 'active' if sort == 'curated' }}"
+                           href="{{ page_url(sort='curated', tab='work', work_page=1) }}">Curated</a>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="project-list">
+            {% for project in work.items %}
+            <div class="project-row-wrap" data-category="{{ project.category }}">
+                {% include "components/_project_row.html" %}
+            </div>
+            {% else %}
+            <p class="side-quests-intro">No projects match that filter.</p>
+            {% endfor %}
+        </div>
+
+        {# The bar's pager is out of sight by here, so it repeats. Inside the
+           tab panel, which is shown and hidden as a unit -- no JS involved. #}
+        <div class="panel-pager">
+            {% with pagination = work, param = 'work_page',
+                    label = 'Work pagination, end of list' %}
+            {% include "components/_pagination.html" %}
+            {% endwith %}
+        </div>
+    </div>
+
+    <!-- Side Quests tab -->
+    <div id="tab-sidequests" class="tab-panel {{ 'hidden' if tab != 'sidequests' }}">
+        <div class="fade-in">
+            <p class="side-quests-intro">
+                The homelab is where I break things on purpose. It's a full R&amp;D
+                environment for testing infrastructure patterns, running AI workloads,
+                and building skills that transfer directly to production.
+            </p>
+        </div>
+
+        <div class="result-line result-line--solo">
+            {% with total = quests.total, noun = 'side quest' %}
+            {% include "components/_result_count.html" %}
+            {% endwith %}
+        </div>
+
+        <div class="quest-list">
+            {% for quest in quests.items %}
+            <div class="quest-row-wrap">
+                {% include "components/_quest_row.html" %}
+            </div>
+            {% endfor %}
+        </div>
+
+        {# The bar's pager is out of sight by here, so it repeats. Inside the
+           tab panel, which is shown and hidden as a unit -- no JS involved. #}
+        <div class="panel-pager">
+            {% with pagination = quests, param = 'quest_page',
+                    label = 'Side quest pagination, end of list' %}
+            {% include "components/_pagination.html" %}
+            {% endwith %}
+        </div>
+    </div>
+
+    <!-- Gallery tab -->
+    <div id="tab-gallery" class="tab-panel {{ 'hidden' if tab != 'gallery' }}">
+        <div class="result-line result-line--solo">
+            {% with total = gallery.total, noun = 'image' %}
+            {% include "components/_result_count.html" %}
+            {% endwith %}
+        </div>
+
+        <div class="gallery-grid">
+            {% for img in gallery.items %}
+            {% include "components/_gallery_card.html" %}
+            {% endfor %}
+        </div>
+
+        {# The bar's pager is out of sight by here, so it repeats. Inside the
+           tab panel, which is shown and hidden as a unit -- no JS involved. #}
+        <div class="panel-pager">
+            {% with pagination = gallery, param = 'gallery_page',
+                    label = 'Gallery pagination, end of list' %}
+            {% include "components/_pagination.html" %}
+            {% endwith %}
+        </div>
+    </div>
+</div>
+
+<!-- ── Backdrop ── -->
+<div id="panel-backdrop"></div>
+
+<!-- ── Panel host: detail panels are fetched on click, not pre-rendered ── -->
+<div id="panel-host"></div>
+
+<!-- ── Gallery Lightbox ── -->
+<div id="gallery-lightbox" class="gallery-lightbox" hidden role="dialog" aria-modal="true" aria-label="Image viewer">
+    <div class="lightbox-backdrop"></div>
+    <button class="lightbox-close" aria-label="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <button class="lightbox-prev" aria-label="Previous image">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button class="lightbox-next" aria-label="Next image">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+    <div class="lightbox-frame">
+        <img class="lightbox-img" src="" alt="">
+        <div class="lightbox-caption">
+            <span class="lightbox-caption-label"></span>
+            <span class="lightbox-caption-source"></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/projects.js') }}"></script>
+{% endblock %}

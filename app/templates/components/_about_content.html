@@ -1,0 +1,114 @@
+{# ── The About content ──
+   Body only: no page wrapper, no shell padding -- the host supplies those.
+   Needs `skills` and `certs` in the context. #}
+<div class="section-heading fade-in">
+    <h2>About</h2>
+    <div class="section-heading-bar"></div>
+</div>
+
+<div class="about-grid">
+    <div class="fade-in">
+        <div class="photo-wrapper">
+            <div class="photo-frame">
+                <span class="photo-initials">JF</span>
+                <span class="photo-label">your photo here</span>
+            </div>
+            <div class="photo-corner"></div>
+        </div>
+    </div>
+
+    <div class="fade-in">
+        <p class="bio-text">
+            I work in technical operations for a television and streaming
+            production company, managing infrastructure across AWS, on-prem
+            networking, and monitoring platforms. My days involve Splunk
+            pipelines, Cisco switches, and keeping production systems running
+            smoothly.
+        </p>
+        <p class="bio-text bio-text--gap">
+            Outside of work, I run a Proxmox homelab that's become a full R&amp;D
+            environment — from self-hosted AI inference to network monitoring
+            experiments. I'm actively pursuing CCNA and CCNP Enterprise
+            certifications.
+        </p>
+    </div>
+</div>
+
+<div class="fade-in">
+    <div class="status-card">
+        <div class="status-card-header">/* current_status.py */</div>
+        <div class="status-grid">
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Role:</span> Technical Operations Engineer
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Cloud:</span> AWS (EC2, S3, IAM, Lambda, RDS)
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Certs:</span> CCNA / CCNP (in progress)
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Stack:</span> Splunk · Grafana · Docker · Terraform
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Languages:</span> Python, Java, Bash
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Networking:</span> Cisco IOS · Palo Alto
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">Platforms:</span> Linux · Proxmox · Windows
+            </div>
+            <div class="terminal-line">
+                <span class="prefix">#</span>
+                <span class="accent">CI/CD:</span> GitLab · OIDC · Terragrunt
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section-heading fade-in">
+    <h2>Skills</h2>
+    <div class="section-heading-bar"></div>
+</div>
+
+<div class="skills-grid fade-in">
+    {% for title, items in skills.items() %}
+    <div class="skill-group">
+        <h3 class="skill-group-title">// {{ title }}</h3>
+        {% for item in items %}
+        <div class="skill-item">
+            <span class="skill-bullet">▸</span>
+            {{ item }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="section-heading fade-in">
+    <h2>Certifications</h2>
+    <div class="section-heading-bar"></div>
+</div>
+
+<div class="certs-list fade-in">
+    {% for cert in certs %}
+    <div class="cert-row">
+        <div class="cert-row-left">
+            <span class="cert-status-dot {{ cert.status }}"></span>
+            <div class="cert-info">
+                <span class="cert-name">{{ cert.name }}</span>
+                <span class="cert-issuer">{{ cert.issuer }}</span>
+            </div>
+        </div>
+        <span class="cert-year">{{ cert.year }}</span>
+    </div>
+    {% endfor %}
+</div>

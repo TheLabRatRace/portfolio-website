@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import field, check, delete_button %}
+{% set admin_tab = 'posts' %}
+
+{% block admin_content %}
+<div class="admin-list-head">
+    <h3 class="admin-section-title">{{ post.title if post else 'New post' }}</h3>
+    {% if post and post.published %}
+    <a class="admin-btn admin-btn-quiet" target="_blank" rel="noopener"
+       href="{{ url_for('blog.detail', slug=post.slug) }}">View →</a>
+    {% endif %}
+</div>
+
+<form class="admin-form" method="post" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="admin-form-grid">
+        {{ field(form.title) }}
+        {{ field(form.slug) }}
+        {{ field(form.date) }}
+        {{ field(form.display_order) }}
+        {{ field(form.tags) }}
+    </div>
+    {{ field(form.excerpt, rows=3, cls="admin-input admin-textarea") }}
+    {{ field(form.content, rows=20, cls="admin-input admin-textarea admin-textarea-tall") }}
+    {{ check(form.published) }}
+    <div class="admin-actions">
+        {{ form.submit(class="admin-btn admin-btn-primary") }}
+        <a class="admin-btn admin-btn-quiet" href="{{ url_for('admin.post_list') }}">Back</a>
+    </div>
+</form>
+
+{% if post %}
+<div class="admin-danger-zone">
+    {{ delete_button(url_for('admin.post_delete', post_id=post.id),
+                     confirm, post.title, 'Delete this post') }}
+</div>
+{% endif %}
+{% endblock %}
