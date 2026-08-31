@@ -1,10 +1,12 @@
+from app.models.assets import AssetPrefixMixin, tracks_assets
 from app.models.search import search_vector_column
 from app.models.tag import post_tags
 
 from app.extensions import db
 
 
-class Post(db.Model):
+@tracks_assets
+class Post(AssetPrefixMixin, db.Model):
     """A blog post, as rows rather than as YAML.
 
     `date` and `created_at` are separate facts: created_at is when the row was
@@ -35,6 +37,19 @@ class Post(db.Model):
     @property
     def tags(self):
         return [t.name for t in self._tags]
+
+    # ── Assets ──
+    def asset_section(self):
+        return "blog"
+
+    def asset_date(self):
+        """The publication date, so a backdated post files under its own day.
+
+        Falling back to today rather than to created_at: created_at is not set
+        until the INSERT that this runs before, so reading it here would give
+        None on exactly the rows that need a date.
+        """
+        return self.date
 
     def __repr__(self):
         return f"<Post {self.slug}>"

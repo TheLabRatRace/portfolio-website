@@ -13,7 +13,7 @@
 
 {% if image.path %}
 <div class="admin-preview">
-    <img src="{{ url_for('static', filename='images/' + image.path) }}"
+    <img src="{{ asset_url(image.path) }}"
          alt="{{ image.label }}" loading="lazy" decoding="async">
 </div>
 {% endif %}

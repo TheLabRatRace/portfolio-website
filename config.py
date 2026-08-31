@@ -45,6 +45,38 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
     ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 
+    # ── Asset storage ──
+    # S3_BUCKET is the switch. Set, uploads go to the bucket and the database
+    # stores `s3:<key>`; unset -- a fresh checkout, CI, a test run -- uploads
+    # go to static/images/uploads/ and everything works without an AWS account.
+    #
+    # NO CREDENTIAL IS READ HERE. boto3 finds them by its own chain
+    # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, ~/.aws, an instance role),
+    # which is why this file can be committed and .env cannot.
+    S3_BUCKET = os.environ.get("S3_BUCKET", "")
+    S3_REGION = os.environ.get("S3_REGION", "us-east-2")
+    # For a local S3 stand-in (MinIO, LocalStack). Empty means real AWS.
+    S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "")
+
+    # Where a visitor's browser fetches an object from: a CloudFront domain,
+    # or the bucket's own URL if it allows anonymous reads. Unset means the
+    # bucket is private and every URL gets presigned -- correct, but unique
+    # per request, so nothing downstream can cache it.
+    S3_PUBLIC_BASE_URL = os.environ.get("S3_PUBLIC_BASE_URL", "").rstrip("/")
+    S3_URL_EXPIRY_SECONDS = int(os.environ.get("S3_URL_EXPIRY_SECONDS", 3600))
+
+    # Only meaningful on a bucket with ACLs enabled; new buckets have them
+    # disabled and reject the header, so this is empty unless you know
+    # otherwise. Prefer a bucket policy or CloudFront over per-object ACLs.
+    S3_OBJECT_ACL = os.environ.get("S3_OBJECT_ACL", "")
+
+    # A key's bytes never change -- a new upload gets a new key -- so the only
+    # reason to revalidate is a deletion, and a deleted asset is a broken page
+    # either way.
+    S3_CACHE_CONTROL = os.environ.get(
+        "S3_CACHE_CONTROL", "public, max-age=31536000, immutable"
+    )
+
     # Set by docker-compose locally. Governs everything that trades a production
     # optimisation for seeing an edit immediately: Jinja's template cache and the
     # static-asset max-age.
@@ -67,6 +99,12 @@ class TestingConfig(Config):
     # Tests post forms without a browser to fetch a token first. The protection
     # is still exercised: one test turns it back on and asserts the rejection.
     WTF_CSRF_ENABLED = False
+
+    # Pinned, not inherited. A developer with S3_BUCKET exported would
+    # otherwise have the suite upload to a real bucket; the S3 path is covered
+    # by tests that stub the client instead.
+    S3_BUCKET = ""
+    S3_PUBLIC_BASE_URL = ""
 
 
 class ProductionConfig(Config):

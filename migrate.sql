@@ -29,6 +29,11 @@ CREATE TABLE projects (
     specs           TEXT[],
     display_order   INTEGER DEFAULT 0,
     published       BOOLEAN DEFAULT FALSE,
+    -- Where this row's assets live in S3, minus the category segment.
+    -- Filled in by 02-schema_admin_search.sql, which runs next on a fresh
+    -- volume and backfills any row that arrived without one -- including
+    -- every seed row below.
+    asset_prefix    VARCHAR(500),
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -58,6 +63,11 @@ CREATE TABLE posts (
     -- written. The list sorts on the first, so a post can be backdated.
     date        DATE,
     display_order INTEGER DEFAULT 0,
+    -- Where this row's assets live in S3, minus the category segment.
+    -- Filled in by 02-schema_admin_search.sql, which runs next on a fresh
+    -- volume and backfills any row that arrived without one -- including
+    -- every seed row below.
+    asset_prefix VARCHAR(500),
     created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

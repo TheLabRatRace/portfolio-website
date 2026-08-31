@@ -176,3 +176,34 @@ CREATE INDEX IF NOT EXISTS idx_gallery_search  ON gallery_images USING GIN (sear
 -- needs the extension.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_tags_name_trgm ON tags USING GIN (name gin_trgm_ops);
+
+-- ── Asset prefixes ───────────────────────────────────────────
+-- Where this row's images, video and audio live in S3, minus
+-- the category segment: `Portfolio-Site/Blog/2026/08/30/slug`.
+-- Prepending `Images/`, `Video/` or `Audio/` gives the three
+-- real prefixes, which is why the category is not stored -- one
+-- row would otherwise need three nearly identical columns.
+--
+-- Recorded when the row is created, whether or not anything has
+-- been uploaded yet. An empty prefix is the point: it is the
+-- answer to "where would a picture of this go", and it has to
+-- exist before there is a picture to put there.
+ALTER TABLE posts    ADD COLUMN IF NOT EXISTS asset_prefix VARCHAR(500);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS asset_prefix VARCHAR(500);
+
+-- Backfill: every row that predates the column gets the prefix
+-- it would have been given, from the date it was published.
+-- COALESCE because a draft has no date yet and created_at is
+-- the closest true thing.
+UPDATE posts
+   SET asset_prefix = 'Portfolio-Site/Blog/'
+                    || to_char(COALESCE(date, created_at::date), 'YYYY/MM/DD')
+                    || '/' || slug
+ WHERE asset_prefix IS NULL;
+
+UPDATE projects
+   SET asset_prefix = 'Portfolio-Site/Projects/'
+                    || CASE type WHEN 'sidequest' THEN 'SideQuests' ELSE 'Work' END
+                    || '/' || to_char(created_at::date, 'YYYY/MM/DD')
+                    || '/' || slug
+ WHERE asset_prefix IS NULL;

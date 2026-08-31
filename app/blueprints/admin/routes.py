@@ -9,7 +9,6 @@ Three rules hold across every route:
   * A save either commits or rolls back and says why.
 """
 
-import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from flask import (
 from flask_login import current_user, login_user, logout_user
 from werkzeug.utils import secure_filename
 
+from app import services as assets
 from app.blueprints.admin import admin_bp
 from app.blueprints.admin.forms import (
     AttachmentForm,
@@ -180,12 +180,18 @@ def _commit(what):
     return True
 
 
-def _save_upload(storage):
-    """Write an uploaded image under static/images/uploads/ and return its path.
+def _save_upload(storage, owner=None):
+    """Store an uploaded image and return the value to put in the database.
 
-    A random token plus the original extension: two files named Screenshot.png
-    cannot overwrite each other, and no attacker-chosen text reaches a served
-    path. secure_filename is applied too, but the token is what makes it safe.
+    `owner` is the post or project the image belongs to; its `asset_prefix`
+    decides where in the bucket the object lands, so an image uploaded on a
+    project's page is filed under that project. Without an owner the upload
+    goes to the section's undated prefix, which is what the general uploads
+    on Home and Contact want.
+
+    The return is an `s3:` URI or a static-relative path depending on the
+    configured backend -- the caller stores whichever it gets and hands it
+    to `asset_url()` to render.
     """
     if not storage or not storage.filename:
         return None
@@ -194,11 +200,19 @@ def _save_upload(storage):
     if ext not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
         flash(f"Refused {original!r}: {ext or 'no extension'} is not an image.", "error")
         return None
-    upload_dir = Path(current_app.config["UPLOAD_DIR"])
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{secrets.token_hex(8)}{ext}"
-    storage.save(upload_dir / name)
-    return f"{current_app.config['UPLOAD_SUBDIR']}/{name}"
+
+    try:
+        name = assets.unique_filename(original)
+        category = assets.category_for(name)
+        if owner is not None and owner.asset_prefix:
+            key = f"{category}/{owner.asset_prefix}/{name}"
+        else:
+            key = assets.build_key(name, "home")
+        return assets.save(storage, key)
+    except (assets.AssetKeyError, assets.StorageError) as exc:
+        current_app.logger.warning("Upload of %s failed: %s", original, exc)
+        flash(f"Could not store {original!r}: {exc}", "error")
+        return None
 
 
 def _pagenum():
@@ -320,7 +334,7 @@ def gallery_add(project_id):
             label=form.label.data.strip(),
             display_order=form.display_order.data or 0,
         )
-        image.image_path = _save_upload(form.upload.data) or (
+        image.image_path = _save_upload(form.upload.data, project) or (
             form.image_path.data or "").strip() or None
         db.session.add(image)
         _commit(image.label)
@@ -336,7 +350,7 @@ def gallery_edit(image_id):
     if form.validate_on_submit():
         image.label = form.label.data.strip()
         image.display_order = form.display_order.data or 0
-        uploaded = _save_upload(form.upload.data)
+        uploaded = _save_upload(form.upload.data, image.project)
         if uploaded:
             image.image_path = uploaded
         else:
