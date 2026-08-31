@@ -34,7 +34,9 @@ services:
       # Local container only: hot-reload templates and stop caching static
       # assets for a day. The image's own defaults are unchanged.
       DEV_RELOAD: "1"
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+      # No fallback: FLASK_ENV is production above, so an unset key makes
+      # the app refuse to boot with instructions rather than run forgeable.
+      SECRET_KEY: ${SECRET_KEY:-}
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres
       SITE_VERSION: v2
     volumes:

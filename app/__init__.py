@@ -8,12 +8,16 @@ from pathlib import Path
 
 from flask import Flask, request
 
-from config import config
+from config import assert_secret_key_is_safe, config
 
 
 def create_app(config_name="development"):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+
+    # Before anything else: an app whose session cookies are forgeable has no
+    # admin boundary at all, so it must not get as far as serving a request.
+    assert_secret_key_is_safe(config_name, app.config.get("SECRET_KEY"))
 
     _register_extensions(app)
 

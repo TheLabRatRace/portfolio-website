@@ -38,7 +38,7 @@ itself is gitignored and must never be committed.
 
 | variable | purpose |
 |---|---|
-| `SECRET_KEY` | Flask session signing. A long random string in any deployment. |
+| `SECRET_KEY` | Flask session signing. **Required in production — the app refuses to boot without it.** |
 | `DATABASE_URL` | Postgres DSN. Compose builds this itself from `POSTGRES_PASSWORD`. |
 | `POSTGRES_PASSWORD` | Password for the local `db` service. |
 | `PORT` | Host port the container publishes on. Defaults to 5003. |
@@ -54,6 +54,25 @@ AWS keys are deliberately **not** in that table. boto3 reads
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from the environment, `~/.aws`,
 or an instance role, so no credential ever has to sit in a file this repo can
 see. `config.py` never reads one.
+
+### SECRET_KEY is a boot condition
+
+Flask signs the session cookie with `SECRET_KEY`. Anyone who knows the value
+can forge a cookie that asserts any user id and `is_admin`, which walks past
+the admin login without a password — so a default committed to a public
+repository is not untidy, it is a working bypass.
+
+There is therefore **no fallback** in `config.py`. `create_app("production")`
+raises at startup if the key is empty or one of the known placeholders, before
+a single request is served. Development and testing name their own throwaway
+keys, which is safe precisely because production will not accept them.
+
+```bash
+python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))" >> .env
+```
+
+`.env` is gitignored. Rotating the key signs every admin out, which is also
+what you want the moment you suspect it leaked.
 
 ## Seeding content
 
