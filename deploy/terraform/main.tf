@@ -1,14 +1,19 @@
 locals {
   name = var.project
 
+  # The container runs as an unprivileged uid, so it binds 5002 rather than 80.
+  # Fargate does not support the systemControl that would lower the privileged
+  # port floor, so this number is in the phase-one URL and in every rule below.
+  container_port = 5002
+
   tags = {
     Project   = var.project
     ManagedBy = "terraform"
     Source    = "deploy/terraform"
   }
 
-  site_domain   = var.subdomain == "" ? var.domain_name : "${var.subdomain}.${var.domain_name}"
-  origin_domain = "${var.origin_subdomain}.${var.domain_name}"
+  site_domain   = var.domain_name == "" ? "" : (var.subdomain == "" ? var.domain_name : "${var.subdomain}.${var.domain_name}")
+  origin_domain = var.domain_name == "" ? "" : "${var.origin_subdomain}.${var.domain_name}"
 
   vpc_id     = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.public.ids
@@ -35,6 +40,7 @@ data "aws_subnets" "public" {
 }
 
 data "aws_route53_zone" "this" {
+  count        = var.enable_cdn ? 1 : 0
   name         = "${var.domain_name}."
   private_zone = false
 }
@@ -47,7 +53,8 @@ data "aws_route53_zone" "this" {
 # The list holds roughly 55 entries and each counts against the 60-rule quota
 # on a security group, so this group gets that one rule and nothing else.
 data "aws_ec2_managed_prefix_list" "cloudfront" {
-  name = "com.amazonaws.global.cloudfront.origin-facing"
+  count = var.enable_cdn ? 1 : 0
+  name  = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
 resource "aws_security_group" "task" {
@@ -58,12 +65,28 @@ resource "aws_security_group" "task" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "from_cloudfront" {
+  count             = var.enable_cdn ? 1 : 0
   security_group_id = aws_security_group.task.id
   description       = "HTTP from CloudFront edge locations only"
-  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront[0].id
   ip_protocol       = "tcp"
-  from_port         = 5002
-  to_port           = 5002
+  from_port         = local.container_port
+  to_port           = local.container_port
+}
+
+# Phase one: no CloudFront yet, so the task is reached directly and the rule
+# has to name whoever is allowed to do that. Mutually exclusive with the rule
+# above -- turning the CDN on replaces this with the prefix list, which is a
+# strictly smaller opening.
+resource "aws_vpc_security_group_ingress_rule" "direct" {
+  for_each = var.enable_cdn ? toset([]) : toset(var.allowed_cidrs)
+
+  security_group_id = aws_security_group.task.id
+  description       = "Direct HTTP to the task (no CDN in front yet)"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = local.container_port
+  to_port           = local.container_port
 }
 
 # Outbound is open: the task pulls from ECR, writes to CloudWatch Logs, reads
