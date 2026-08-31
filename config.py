@@ -139,6 +139,18 @@ class Config:
     # outbound links rather than emitting a broken href.
     PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").rstrip("/")
 
+    # ── Who may call the JSON API from a browser on another origin ──
+    # A comma-separated list of exact origins ("https://jeff.example"), not
+    # patterns. Empty means no cross-origin browser client, which is the right
+    # default while the site is server-rendered from the same host: the API is
+    # public and read-only, so a wildcard would be harmless today and exactly
+    # wrong the first time an endpoint here is neither.
+    API_CORS_ORIGINS = tuple(
+        origin.strip().rstrip("/")
+        for origin in os.environ.get("API_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    )
+
     # ── Session cookie ──
     # SameSite=Lax is what actually stops a cross-site POST from riding the
     # admin's session; the CSRF token is the second lock, not the first.

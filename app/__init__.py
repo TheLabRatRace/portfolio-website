@@ -203,6 +203,7 @@ def _register_blueprints(app):
     role = app.config["APP_ROLE"]
 
     if role in ("public", "all"):
+        from app.blueprints.api import api_bp
         from app.blueprints.blog import blog_bp
         from app.blueprints.main import main_bp
         from app.blueprints.projects import projects_bp
@@ -212,6 +213,11 @@ def _register_blueprints(app):
         app.register_blueprint(blog_bp, url_prefix="/blog")
         app.register_blueprint(projects_bp, url_prefix="/projects")
         app.register_blueprint(search_bp, url_prefix="/search")
+        # The JSON view of the same content. Public because the content is:
+        # every route is a GET and every query filters on published=True.
+        # Versioned in the path so a breaking change can ship as /api/v2
+        # while a cached shell still reads v1.
+        app.register_blueprint(api_bp, url_prefix="/api/v1")
 
     if role in ("admin", "all"):
         from app.blueprints.admin import admin_bp
@@ -220,15 +226,30 @@ def _register_blueprints(app):
 
 
 def _register_error_handlers(app):
-    from flask import render_template
+    from flask import jsonify, render_template
+
+    def _wants_json():
+        """An API caller gets a JSON body, not a page.
+
+        Keyed on the path rather than on Accept: a fetch() sends
+        Accept: */* by default, so content negotiation would hand a
+        JavaScript client an HTML error page it cannot read.
+        """
+        return request.path.startswith("/api/")
 
     @app.errorhandler(404)
     def not_found(error):
+        if _wants_json():
+            return jsonify({"error": "not_found", "path": request.path}), 404
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
     def server_error(error):
         app.logger.error("500 error: %s", error)
+        if _wants_json():
+            # No detail: the message is whatever raised, and that is a
+            # stack-shaped hint handed to an anonymous caller.
+            return jsonify({"error": "server_error"}), 500
         return render_template("errors/500.html"), 500
 
 
