@@ -339,6 +339,51 @@ aws ecs execute-command --cluster portfolio --task <task-arn> --container admin 
 
 ---
 
+## Static assets
+
+CSS, JS and images are ~19 MB across ~2,000 files, and none of it is work a
+0.25 vCPU container should be doing. `enable_static_cdn` (on by default)
+creates a private S3 bucket and a CloudFront distribution in front of it, and
+sets `STATIC_BASE_URL` in both task definitions to the distribution's URL.
+
+With it set, every `<link>`, `<script>` and `<img>` on the page is an absolute
+URL at the edge and the origin never sees the request. With it empty -- locally,
+or with `enable_static_cdn = false` -- the same template calls fall back to
+`url_for('static', ...)` and Flask serves the bytes exactly as before. Nothing
+in the templates knows which one is happening.
+
+Upload after any change to CSS, JS or images:
+
+```bash
+bash deploy/scripts/sync_static.sh
+```
+
+That rebuilds `style.min.css`, syncs the directory with `--delete`, and issues
+one `/*` invalidation. Run it **before** the deploy that ships the HTML pointing
+at the new files, never after -- assets first, then the page that asks for them.
+
+Two things worth knowing about the caching:
+
+- CSS and JS are requested with `?v=<sha256 prefix>` of their contents, so a
+  changed file is a URL no browser has seen and a one-year `max-age` is safe.
+  That digest does *not* protect CloudFront: the managed CachingOptimized
+  policy leaves query strings out of its cache key. The invalidation is what
+  covers the edge.
+- Images have no digest, so they get a week rather than a year. An invalidation
+  clears CloudFront but never reaches a browser that already has the file.
+
+The bucket is private -- reachable only through the distribution, by an origin
+access control scoped to that one distribution's ARN. There is no public URL
+that bypasses the cache, and nothing can be pulled straight out of S3 on your
+bandwidth bill. It is also a *different* bucket from the assets bucket that
+holds uploads, and that is not tidiness: `sync_static.sh` runs `--delete`, and
+pointed at a bucket holding uploads it would delete content the repo has never
+seen.
+
+Cost is rounding error: ~20 MB of storage is about $0.0005/month, and
+CloudFront's perpetual free tier covers 1 TB out and 10M requests. The first
+1,000 invalidation paths each month are free, and `/*` counts as one path.
+
 ## Afterwards
 
 **Ship a code change** — push and roll, Terraform not involved:

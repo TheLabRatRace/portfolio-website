@@ -58,3 +58,18 @@ output "admin_service_name" {
 output "admin_security_group_id" {
   value = aws_security_group.admin.id
 }
+
+output "static_bucket" {
+  description = "Bucket holding the site's CSS, JS and images. sync_static.sh writes here."
+  value       = one(aws_s3_bucket.static[*].bucket)
+}
+
+output "static_base_url" {
+  description = "What STATIC_BASE_URL is set to in both task definitions."
+  value       = local.static_base_url
+}
+
+output "static_distribution_id" {
+  description = "Static-asset distribution. sync_static.sh invalidates this after a sync."
+  value       = one(aws_cloudfront_distribution.static[*].id)
+}

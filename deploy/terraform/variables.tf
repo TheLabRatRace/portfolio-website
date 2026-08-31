@@ -198,3 +198,31 @@ variable "public_site_url" {
   type        = string
   default     = ""
 }
+
+variable "enable_static_cdn" {
+  description = <<-EOT
+    Create the static-asset bucket and its CloudFront distribution, and point
+    both containers at it. Independent of enable_cdn: this one needs no domain
+    and no certificate, so it is worth having in phase one, where the site is
+    still a bare IP address.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "static_bucket" {
+  description = "Name for the static-asset bucket. Empty means <project>-static."
+  type        = string
+  default     = ""
+}
+
+variable "static_base_url" {
+  description = <<-EOT
+    Override the URL the app builds static asset links from. Normally empty --
+    the distribution created here supplies it. Set it to point at a bucket this
+    configuration does not manage, or to "" with enable_static_cdn = false to
+    have the container serve its own assets again.
+  EOT
+  type        = string
+  default     = ""
+}

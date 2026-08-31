@@ -60,6 +60,7 @@ def create_app(config_name="development", role=None):
     _register_template_filters(app)
     _register_image_variants(app)
     _register_asset_urls(app)
+    _register_static_urls(app)
     _register_stylesheet(app)
     _register_hooks(app)
     _register_context(app)
@@ -274,8 +275,6 @@ def _register_image_variants(app):
     artifact, so it is read once at startup. An image with no entry yields an
     empty string and the template's plain `src` still serves it.
     """
-    from flask import url_for
-
     manifest_path = Path(app.static_folder) / "images" / "variants.json"
     try:
         manifest = json.loads(manifest_path.read_text())
@@ -297,7 +296,7 @@ def _register_image_variants(app):
         for width in widths:
             # The widest candidate is the source; the tool never upscales.
             name = rel_path if width == source_width else f"{stem}-{width}w.{ext}"
-            url = url_for("static", filename="images/" + name)
+            url = app.extensions["static_url"]("images/" + name)
             parts.append(f"{url} {width}w")
         return ", ".join(parts)
 
@@ -318,6 +317,60 @@ def _register_asset_urls(app):
     app.logger.info("Asset storage: %s", app.config.get("S3_BUCKET") or "local")
 
 
+def _register_static_urls(app):
+    """One way to build a URL for a file in app/static.
+
+    Templates used to call url_for('static', ...) directly, which is right
+    while Flask serves those bytes. It no longer has to: STATIC_BASE_URL points
+    at the CloudFront distribution in front of the static bucket, and then the
+    container is out of the business of serving CSS entirely -- the request
+    never reaches it. Empty (local development, and any deploy without the
+    bucket) falls back to url_for and behaves exactly as before.
+
+    `cache_bust` appends a digest of the file's contents. It is on for the
+    build artifacts that change in place -- the stylesheet, the scripts --
+    because that digest is what makes a long max-age safe: without it a
+    returning visitor keeps yesterday's CSS for as long as the cache lives.
+    It is off for images, which get a new path when they change and would
+    otherwise cost a SHA-256 of every file on the page.
+    """
+    digests = {}
+
+    def digest_for(filename):
+        if filename not in digests:
+            path = Path(app.static_folder) / filename
+            try:
+                digests[filename] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+            except OSError:
+                # A missing file is a broken link either way; do not make it a
+                # 500 on a page that would otherwise render.
+                digests[filename] = ""
+        return digests[filename]
+
+    @app.template_global("static_url")
+    def static_url(filename, cache_bust=False):
+        filename = str(filename).lstrip("/")
+        version = digest_for(filename) if cache_bust else ""
+        # Read per call rather than captured at startup: the digests are worth
+        # caching because they cost a file read, the config lookup is a dict
+        # hit, and reading it late is what lets a test flip the base URL.
+        base = app.config["STATIC_BASE_URL"].rstrip("/")
+        if base:
+            return f"{base}/{filename}" + (f"?v={version}" if version else "")
+        if version:
+            return url_for("static", filename=filename, v=version)
+        return url_for("static", filename=filename)
+
+    # Also reachable from Python: app/services/storage.py builds image URLs
+    # and has no Jinja context to look a template global up in.
+    app.extensions["static_url"] = static_url
+
+    app.logger.info(
+        "Static assets: %s",
+        app.config["STATIC_BASE_URL"] or "served by this process",
+    )
+
+
 def _register_stylesheet(app):
     """Point every page at the minified stylesheet, fingerprinted.
 
@@ -325,12 +378,7 @@ def _register_stylesheet(app):
     the source, same 1670 rules. It is a build artifact, so a stale one is
     possible: when it is older than the file it came from the plain stylesheet
     is served instead. Bigger, never wrong.
-
-    The digest is what makes the one-day max-age on static safe. Without it a
-    returning visitor keeps yesterday's CSS for a day after a deploy.
     """
-    from flask import url_for
-
     css_dir = Path(app.static_folder) / "css"
     source, minified = css_dir / "style.css", css_dir / "style.min.css"
 
@@ -340,12 +388,13 @@ def _register_stylesheet(app):
             chosen = minified
         else:
             app.logger.warning("style.min.css is stale -- run tools/minify_css.py")
-    digest = hashlib.sha256(chosen.read_bytes()).hexdigest()[:8]
     app.logger.info("Stylesheet: %s (%d bytes)", chosen.name, chosen.stat().st_size)
+
+    static_url = app.jinja_env.globals["static_url"]
 
     @app.template_global("stylesheet_url")
     def stylesheet_url():
-        return url_for("static", filename=f"css/{chosen.name}", v=digest)
+        return static_url(f"css/{chosen.name}", cache_bust=True)
 
 
 def _register_cli(app):

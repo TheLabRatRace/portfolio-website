@@ -33,5 +33,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/projects.js') }}"></script>
+<script src="{{ static_url('js/projects.js', cache_bust=True) }}"></script>
 {% endblock %}

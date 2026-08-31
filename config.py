@@ -130,6 +130,12 @@ class Config:
     # development and the test suite want. In AWS the two roles are two ECS
     # services running the same image, so the public container has no /admin
     # routes at all -- not hidden behind a login, absent.
+    # Where the CSS, JS and images in app/static are served from. Empty means
+    # this process serves them, which is what development wants and what any
+    # deploy without the bucket falls back to. Set it to the CloudFront domain
+    # and the container stops carrying that traffic entirely.
+    STATIC_BASE_URL = os.environ.get("STATIC_BASE_URL", "").rstrip("/")
+
     APP_ROLE = os.environ.get("APP_ROLE", "all")
 
     # Where the public site lives, as seen from the outside. The admin app runs
@@ -252,6 +258,10 @@ class TestingConfig(Config):
     # would otherwise watch every public test 404. Tests that want one role in
     # isolation pass role= to create_app.
     APP_ROLE = "all"
+
+    # Same reasoning: tests assert on the URLs templates emit, and an exported
+    # STATIC_BASE_URL would rewrite every one of them.
+    STATIC_BASE_URL = ""
 
     # Its own variable, deliberately not DATABASE_URL. That one now names RDS
     # by default, and the suite must never be one stray `pytest` away from

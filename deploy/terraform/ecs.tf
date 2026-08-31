@@ -60,6 +60,9 @@ resource "aws_ecs_task_definition" "app" {
       { name = "TRUSTED_PROXY_HOPS", value = var.enable_cdn ? "1" : "0" },
       # The container filesystem dies with the task; stdout is what is kept.
       { name = "LOG_TO_STDOUT", value = "1" },
+      # Empty until the static distribution exists, and then absolute URLs on
+      # every <link> and <script>. The bytes stop passing through this task.
+      { name = "STATIC_BASE_URL", value = local.static_base_url },
       { name = "S3_BUCKET", value = var.assets_bucket },
       { name = "S3_REGION", value = var.region },
       { name = "S3_PUBLIC_BASE_URL", value = var.assets_public_base_url },

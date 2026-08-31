@@ -25,6 +25,12 @@ locals {
   # public site only, and putting a login form behind a CDN buys nothing.
   admin_cidrs = length(var.admin_allowed_cidrs) > 0 ? var.admin_allowed_cidrs : var.allowed_cidrs
 
+  # Where the two containers tell browsers to fetch CSS, JS and images from.
+  # Empty means "from me", which is the correct answer when there is no bucket.
+  static_base_url = var.static_base_url != "" ? var.static_base_url : (
+    var.enable_static_cdn ? "https://${aws_cloudfront_distribution.static[0].domain_name}" : ""
+  )
+
   vpc_id     = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.public.ids
 }
