@@ -4,7 +4,14 @@ venv/
 
 # Secrets and local env
 .env
+.env.example
 agent-guidance/
+# The AWS access key CSV. `COPY . .` was baking it into every image layer --
+# and a layer is not deleted by a later RUN rm, it is still in the tarball
+# anyone who can pull the image can read. Production reads S3 through the
+# task's IAM role and needs no key at all.
+*accessKeys*.csv
+*.pem.key
 
 # Python bytecode / test caches
 __pycache__/
@@ -40,6 +47,12 @@ SECURITY.md
 # Generated stress imagery. 19 MB of synthetic files that no reachable page
 # references; regenerate them locally instead of baking them into the image.
 app/static/images/stress/
+
+# Test suite and one-off tooling. Neither is reachable from a served request,
+# and pytest pulls nothing into the image that gunicorn needs.
+tests/
+tools/
+*.sql
 
 # Docker files themselves
 Dockerfile

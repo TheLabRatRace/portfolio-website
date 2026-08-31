@@ -1,37 +1,55 @@
 # syntax=docker/dockerfile:1
 
-# Matches the Python the project's .venv was built with.
-FROM python:3.13-slim
+# ── build ───────────────────────────────────────────────────────────────────
+# Dependencies are resolved once here, into a venv, and the pip machinery that
+# did it stays behind. Only /opt/venv crosses into the runtime image, so the
+# thing that ships has no build tooling and no package index cache in a layer.
+FROM python:3.13-slim AS build
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    FLASK_ENV=production \
-    PORT=5002
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /app
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Dependencies first so code edits don't invalidate the install layer.
-# psycopg2-binary ships wheels, so no build toolchain is needed here.
 COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# ── runtime ─────────────────────────────────────────────────────────────────
+FROM python:3.13-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FLASK_ENV=production \
+    PORT=5002 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+COPY --from=build /opt/venv /opt/venv
 COPY . .
 
-# Run unprivileged. LOG_DIR resolves to /app/logs (config.py), so that
-# directory has to exist and be writable by the runtime user.
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/logs \
     && chown -R appuser:appuser /app
-USER appuser
 
+USER appuser
 EXPOSE 5002
 
-# The app has no dedicated health endpoint; "/" is static and DB-free,
-# which is exactly what a liveness check wants.
+# /healthz, not "/". "/" renders the about page out of the database, so a
+# database that is merely slow reads as a dead container -- and the answer ECS
+# gives a failing health check is to kill the task, which fixes nothing and
+# takes the site down for the length of the outage. /healthz answers from the
+# process alone; see _register_health() in app/__init__.py.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5002/', timeout=4).status == 200 else 1)"
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5002/healthz', timeout=4).status == 200 else 1)"
 
-# run.py already exposes a module-level `app` built by the factory.
-CMD ["gunicorn", "--bind", "0.0.0.0:5002", "--workers", "2", "--timeout", "60", \
+# One worker with threads, not two processes. The Fargate task is 0.25 vCPU,
+# where a second interpreter buys no parallelism and costs ~90 MB of the 512;
+# and every request here spends far longer waiting on Postgres than computing,
+# which is exactly the shape threads help. Local development overrides this
+# whole command in docker-compose.yml to add --reload.
+CMD ["gunicorn", "--bind", "0.0.0.0:5002", \
+     "--worker-class", "gthread", "--workers", "1", "--threads", "8", \
+     "--timeout", "60", "--graceful-timeout", "30", \
      "--access-logfile", "-", "--error-logfile", "-", "run:app"]

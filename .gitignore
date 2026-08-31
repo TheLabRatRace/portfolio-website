@@ -89,3 +89,13 @@ Thumbs.db
 
 # Local-only tool state; the shared .claude/skills/ stays tracked.
 .claude/settings.local.json
+
+# Terraform. State holds every resource attribute in plaintext -- including
+# anything a provider read back -- and tfvars holds the account's own details.
+deploy/terraform/.terraform/
+deploy/terraform/.build/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
