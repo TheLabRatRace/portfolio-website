@@ -16,6 +16,11 @@ agent-guidance/
 *.crt
 *.cer
 *.der
+# ...except the AWS RDS global trust store. It is Amazon's published list of
+# public CA certificates, not a key -- `sslmode=verify-full` needs it to prove
+# the database is the database. Refresh it from
+# https://truststore.pki.rds.amazonaws.com/global-bundle.pem
+!certs/global-bundle.pem
 *.p12
 *.pfx
 *.jks

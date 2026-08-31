@@ -37,7 +37,11 @@ services:
       # No fallback: FLASK_ENV is production above, so an unset key makes
       # the app refuse to boot with instructions rather than run forgeable.
       SECRET_KEY: ${SECRET_KEY:-}
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres
+      # Defaults to the sibling `db` container. Overridable so the same image
+      # can point at RDS -- see docker-compose.rds.yml, which is the only
+      # thing that sets DATABASE_URL. Deliberately NOT read from .env: tests
+      # run against whatever this resolves to, and they must never touch RDS.
+      DATABASE_URL: ${LOCAL_DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@db:5432/postgres}
       SITE_VERSION: v2
     volumes:
       # Live source mount -- edits on the host reach the container without a rebuild.
