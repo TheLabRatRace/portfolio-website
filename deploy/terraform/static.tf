@@ -90,13 +90,26 @@ data "aws_cloudfront_response_headers_policy" "static_cors" {
 }
 
 data "aws_cloudfront_cache_policy" "api_uncached" {
-  count = var.enable_static_cdn && var.enable_cdn ? 1 : 0
+  count = var.enable_static_cdn && local.api_origin_enabled ? 1 : 0
   name  = "Managed-CachingDisabled"
 }
 
+# AllViewerExceptHostHeader, and the exception is the point. API Gateway routes
+# on the Host header it is given; forwarding the viewer's (the CloudFront
+# domain) would get every request answered with a 403 from a service that has
+# never heard of that name.
 data "aws_cloudfront_origin_request_policy" "api_forward" {
-  count = var.enable_static_cdn && var.enable_cdn ? 1 : 0
+  count = var.enable_static_cdn && local.api_origin_enabled ? 1 : 0
   name  = "Managed-AllViewerExceptHostHeader"
+}
+
+resource "aws_cloudfront_function" "spa_router" {
+  count   = var.enable_static_cdn ? 1 : 0
+  name    = "${local.name}-spa-router"
+  runtime = "cloudfront-js-2.0"
+  comment = "Rewrite extensionless paths to /index.html so the shell can route them"
+  publish = true
+  code    = file("${path.module}/functions/spa_router.js")
 }
 
 resource "aws_cloudfront_distribution" "static" {
@@ -122,21 +135,25 @@ resource "aws_cloudfront_distribution" "static" {
   }
 
   # The API, on the same origin as the shell. Without this the shell would be
-  # an https page fetching a plain-http task -- blocked as mixed content --
-  # and CloudFront cannot forward to a bare IP either, so this needs the
-  # hostname that enable_cdn creates. Until then the shell renders and every
-  # fetch fails; see deploy/README.md, "The shell needs a domain".
+  # an https page fetching a plain-http task -- blocked as mixed content -- and
+  # CloudFront cannot forward to a bare IP either, so this needs a hostname.
+  # Either of two things supplies one: apigw.tf's execute-api endpoint, or the
+  # Route 53 record enable_cdn creates. With neither, the shell renders and
+  # every fetch fails; see deploy/README.md, "Getting the shell an API".
   dynamic "origin" {
-    for_each = var.enable_cdn ? [1] : []
+    for_each = local.api_origin_enabled ? [1] : []
 
     content {
       origin_id   = "task"
-      domain_name = aws_route53_record.origin[0].fqdn
+      domain_name = local.api_origin_domain
 
       custom_origin_config {
-        http_port                = local.container_port
-        https_port               = 443
-        origin_protocol_policy   = "http-only"
+        http_port  = local.container_port
+        https_port = 443
+        # API Gateway speaks https and nothing else. The Route 53 record points
+        # at the task, which has no certificate and terminates plaintext on its
+        # container port.
+        origin_protocol_policy   = var.enable_api_gateway ? "https-only" : "http-only"
         origin_ssl_protocols     = ["TLSv1.2"]
         origin_read_timeout      = 30
         origin_keepalive_timeout = 5
@@ -145,7 +162,7 @@ resource "aws_cloudfront_distribution" "static" {
   }
 
   dynamic "ordered_cache_behavior" {
-    for_each = var.enable_cdn ? [1] : []
+    for_each = local.api_origin_enabled ? [1] : []
 
     content {
       path_pattern           = "/api/*"
@@ -173,29 +190,14 @@ resource "aws_cloudfront_distribution" "static" {
 
     cache_policy_id            = data.aws_cloudfront_cache_policy.static_optimized[0].id
     response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static_cors[0].id
-  }
 
-  # Client-side routing on a bucket. S3 has no notion of /projects/foo, and
-  # with OAC the bucket denies ListBucket, so a missing key comes back 403
-  # rather than 404 -- both are mapped, because which one you get depends on
-  # policy details that are easy to change by accident.
-  #
-  # 200, not the original status: this is the app's own router being handed a
-  # path it does know, not an error. A genuinely unknown path still renders
-  # the shell's "Not found" view, which is the same thing the rendered site
-  # does with its 404 template.
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 10
-  }
-
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 10
+    # Turns /projects/foo into a request for index.html, so the shell's router
+    # gets the path. Attached here and not to /api/*, which is the whole point
+    # -- see the function for why the obvious custom_error_response is wrong.
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_router[0].arn
+    }
   }
 
   restrictions {

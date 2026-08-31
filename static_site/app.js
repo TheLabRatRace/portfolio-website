@@ -49,14 +49,22 @@
     view.innerHTML = '<div class="projects-page"><p class="blog-intro">Loading…</p></div>';
   }
 
+  /* The same markup errors/404.html and errors/500.html render, because
+   * .error-page is centred and the section heading's underline bar is not --
+   * borrowing the heading here leaves an orphaned gold dash floating to the
+   * left of the title. The status is real: a 404 from the API means the slug
+   * does not exist, and anything else means the API did not answer. */
   function failed(error) {
     var missing = error && error.status === 404;
     render(
       '<div class="error-page">' +
-      heading(missing ? "Not found" : "Something went wrong") +
-      '<p class="blog-intro">' +
+      '<div class="error-code">' + (missing ? "404" : "500") + "</div>" +
+      '<h1 class="error-title">' +
+      (missing ? "Page not found" : "Server error") +
+      "</h1>" +
+      '<p class="error-body">' +
       (missing
-        ? "That page isn't here."
+        ? "That path doesn't exist."
         : "The content service didn't answer. Try again in a moment.") +
       "</p>" +
       '<a href="/" class="btn-primary" data-link>Go home</a></div>'
