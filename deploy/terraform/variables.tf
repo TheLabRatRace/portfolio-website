@@ -211,7 +211,12 @@ variable "enable_static_cdn" {
 }
 
 variable "static_bucket" {
-  description = "Name for the static-asset bucket. Empty means <project>-static."
+  description = <<-EOT
+    Name for the static-asset bucket. Empty means <project>-static, which is
+    worth overriding: bucket names are global across every AWS account, and a
+    generic one ("portfolio-static") is likely already taken by a stranger.
+    The apply fails with BucketAlreadyExists when it is.
+  EOT
   type        = string
   default     = ""
 }
