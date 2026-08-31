@@ -79,3 +79,75 @@ def test_env_example_ships_a_placeholder_not_a_usable_key():
     assert line.split("=", 1)[1].strip() in INSECURE_SECRET_KEYS, (
         "a real-looking key in .env.example would be copied into a deployment"
     )
+
+
+# ── DATABASE_URL: TLS is a boot condition for a remote database ─────────────
+#
+# The RDS instance is reachable from outside the VPC, so the only thing
+# standing between the app's password and anyone who can answer for that
+# hostname is certificate validation. `require` does not do it; `verify-full`
+# does. These lock the distinction in place.
+
+RDS_HOST = "example.abcdefghijkl.us-east-2.rds.amazonaws.com"
+VERIFIED = (
+    f"postgresql://app:pw@{RDS_HOST}:5432/portfolio"
+    "?sslmode=verify-full&sslrootcert=/app/certs/global-bundle.pem"
+)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        f"postgresql://app:pw@{RDS_HOST}:5432/portfolio",
+        f"postgresql://app:pw@{RDS_HOST}:5432/portfolio?sslmode=require",
+        f"postgresql://app:pw@{RDS_HOST}:5432/portfolio?sslmode=prefer",
+        f"postgresql://app:pw@{RDS_HOST}:5432/portfolio?sslmode=verify-ca",
+        # verify-full with nothing to verify against is not verification.
+        f"postgresql://app:pw@{RDS_HOST}:5432/portfolio?sslmode=verify-full",
+    ],
+)
+def test_remote_database_without_verify_full_is_refused(uri):
+    with pytest.raises(RuntimeError, match="verify-full"):
+        config_module.assert_database_url_is_safe("production", uri)
+
+
+def test_remote_database_with_verify_full_and_a_trust_store_is_accepted():
+    config_module.assert_database_url_is_safe("production", VERIFIED)
+
+
+def test_the_error_never_echoes_the_password():
+    with pytest.raises(RuntimeError) as exc:
+        config_module.assert_database_url_is_safe(
+            "production", f"postgresql://app:hunter2@{RDS_HOST}:5432/portfolio"
+        )
+    assert "hunter2" not in str(exc.value)
+    assert RDS_HOST in str(exc.value)
+
+
+@pytest.mark.parametrize("host", sorted(config_module.LOCAL_DB_HOSTS))
+def test_local_hosts_are_exempt(host):
+    """The compose stack runs FLASK_ENV=production against plaintext `db`."""
+    config_module.assert_database_url_is_safe(
+        "production", f"postgresql://postgres:pw@{host}:5432/postgres"
+    )
+
+
+@pytest.mark.parametrize("config_name", ["development", "testing"])
+def test_non_production_configs_are_not_gated(config_name):
+    config_module.assert_database_url_is_safe(
+        config_name, f"postgresql://app:pw@{RDS_HOST}:5432/portfolio"
+    )
+
+
+def test_an_unparseable_url_is_not_treated_as_remote():
+    """No host means nothing to impersonate; SQLAlchemy will fail on its own."""
+    config_module.assert_database_url_is_safe("production", "")
+    config_module.assert_database_url_is_safe("production", None)
+
+
+def test_the_committed_trust_store_is_present_and_is_a_ca_bundle():
+    bundle = Path(config_module.__file__).parent / "certs" / "global-bundle.pem"
+    assert bundle.is_file(), "certs/global-bundle.pem is what verify-full reads"
+    text = bundle.read_text()
+    assert text.count("BEGIN CERTIFICATE") > 50
+    assert "PRIVATE KEY" not in text, "a trust store holds no keys"

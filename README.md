@@ -41,6 +41,7 @@ itself is gitignored and must never be committed.
 | `SECRET_KEY` | Flask session signing. **Required in production — the app refuses to boot without it.** |
 | `DATABASE_URL` | Postgres DSN. Compose builds this itself from `POSTGRES_PASSWORD`. |
 | `POSTGRES_PASSWORD` | Password for the local `db` service. |
+| `RDS_DATABASE_URL` | The AWS RDS DSN. Read **only** by `docker-compose.rds.yml`. |
 | `PORT` | Host port the container publishes on. Defaults to 5003. |
 | `DEV_RELOAD` | Hot-reloads templates and stops caching static assets. Local only. |
 | `SHOW_PAGE_TITLE` | Big serif page headings on or off. |
@@ -73,6 +74,91 @@ python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))" >>
 
 `.env` is gitignored. Rotating the key signs every admin out, which is also
 what you want the moment you suspect it leaked.
+
+## The database
+
+Two targets, and switching between them is explicit.
+
+```bash
+docker compose up -d                                             # local throwaway Postgres
+docker compose -f docker-compose.yml -f docker-compose.rds.yml up -d web   # AWS RDS
+```
+
+The plain command is the default on purpose. `docker compose exec web pytest`
+runs against whatever the web container is wired to, and the suite writes rows
+— so the local volume is where it belongs. `docker-compose.yml` never reads
+`RDS_DATABASE_URL`; only the override does.
+
+### The application is not the master user
+
+`portfolio_app` is a plain login role with `SELECT, INSERT, UPDATE, DELETE` on
+the tables and `USAGE, SELECT` on the sequences. It has no superuser bit, and
+no `CREATE` on the database or on schema `public`:
+
+```
+=> create table nope(i int);
+ERROR:  permission denied for schema public
+```
+
+Schema changes are therefore a deliberate act by the master user running
+`migrate.sql` and `schema_admin_search.sql` by hand, not something a
+compromised web process can do. `ALTER DEFAULT PRIVILEGES` grants the app role
+the same DML on tables the master user creates later, so a new table does not
+silently become invisible to the app.
+
+### verify-full is a boot condition
+
+The instance answers on a public address, so certificate validation is the
+only thing standing between the app's password and anyone who can win the DNS
+or routing race for that hostname. `sslmode=require` does not help: it
+encrypts the connection and validates nothing, so an impostor gets an
+encrypted channel and the credentials. Only `verify-full` checks the chain
+*and* the hostname, and it needs a trust store to check against.
+
+`create_app("production")` refuses to start if `DATABASE_URL` names a remote
+host without `sslmode=verify-full` and an `sslrootcert` — the same fail-closed
+treatment `SECRET_KEY` gets, for the same reason: a connection that silently
+downgrades looks exactly like one that did not.
+
+`certs/global-bundle.pem` is AWS's published list of RDS CA certificates. It
+holds no keys, which is why it is the one file the `*.pem` rule in
+`.gitignore` un-ignores; refresh it from
+`https://truststore.pki.rds.amazonaws.com/global-bundle.pem`. The override
+mounts it read-only at `/app/certs/global-bundle.pem`.
+
+### Bringing up a fresh instance
+
+As the master user, against a database that does not exist yet:
+
+```sql
+CREATE DATABASE portfolio;
+CREATE ROLE portfolio_app WITH LOGIN PASSWORD '...';
+REVOKE ALL ON DATABASE portfolio FROM PUBLIC;
+GRANT CONNECT ON DATABASE portfolio TO portfolio_app;
+```
+
+Then, connected to `portfolio`:
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -f migrate.sql
+psql "$DSN" -v ON_ERROR_STOP=1 -f schema_admin_search.sql
+```
+
+```sql
+GRANT USAGE ON SCHEMA public TO portfolio_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO portfolio_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO portfolio_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO portfolio_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO portfolio_app;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+```
+
+`migrate.sql` seeds content but no admin user — create that with the
+`create-admin` step under **Admin and search**. Both files are RDS-safe: the
+only privileged statement in either is `CREATE EXTENSION pg_trgm`, which is on
+Amazon's allow-list for the master user.
 
 ## Seeding content
 

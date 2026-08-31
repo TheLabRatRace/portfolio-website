@@ -1,0 +1,23 @@
+# Point the web container at AWS RDS instead of the local `db` service.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.rds.yml up -d web
+#
+# Opt-in on purpose. The plain `docker compose up` stays on the throwaway
+# local volume, because the test suite runs against whatever the web
+# container is wired to and it must never write to the real database.
+#
+# Requires RDS_DATABASE_URL in .env (gitignored). It carries the
+# portfolio_app role -- not the RDS master user -- and must end with
+#   ?sslmode=verify-full&sslrootcert=/app/certs/global-bundle.pem
+# Anything weaker encrypts the wire without proving who is on the far end.
+
+services:
+  web:
+    environment:
+      DATABASE_URL: ${RDS_DATABASE_URL:?set RDS_DATABASE_URL in .env}
+    volumes:
+      - .:/app
+      # Read-only: the trust store is input, never something the app rewrites.
+      - ./certs/global-bundle.pem:/app/certs/global-bundle.pem:ro
+    # The local Postgres is not part of this topology.
+    depends_on: !reset []

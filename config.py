@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -43,6 +44,47 @@ def assert_secret_key_is_safe(config_name, secret_key):
             "    python3 -c \"import secrets; "
             "print('SECRET_KEY=' + secrets.token_urlsafe(48))\" >> .env\n"
         )
+
+
+# Hosts that are only reachable from inside the box or the compose network.
+# The local stack runs with FLASK_ENV=production, so `db` -- the compose
+# service name -- has to count as local or nothing starts.
+LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "db", "postgres"})
+
+
+def assert_database_url_is_safe(config_name, database_uri):
+    """Refuse to talk to a remote database without proving who answered.
+
+    `sslmode=require` encrypts the connection and validates nothing: any host
+    that can win the DNS or routing race presents its own certificate and is
+    handed the credentials. Only `verify-full` checks the chain *and* the
+    hostname, and it needs a trust store to check against. The RDS instance
+    holds every row the site has, so this is a boot condition, not advice.
+    """
+    if config_name != "production":
+        return
+
+    parsed = urlsplit(database_uri or "")
+    host = (parsed.hostname or "").lower()
+    if not host or host in LOCAL_DB_HOSTS:
+        return
+
+    query = parse_qs(parsed.query)
+    sslmode = (query.get("sslmode") or [""])[0]
+    sslrootcert = (query.get("sslrootcert") or [""])[0]
+    if sslmode == "verify-full" and sslrootcert:
+        return
+
+    raise RuntimeError(
+        f"DATABASE_URL points at the remote host {host!r} without "
+        "sslmode=verify-full and an sslrootcert, and this is a production "
+        "config. Anything weaker encrypts the wire without proving the "
+        "server is the database, so an impostor collects the password. "
+        "Append to the URL:\n\n"
+        "    ?sslmode=verify-full&sslrootcert=/app/certs/global-bundle.pem\n\n"
+        "The bundle is AWS's published CA list, committed at "
+        "certs/global-bundle.pem.\n"
+    )
 
 
 class Config:
