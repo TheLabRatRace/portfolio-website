@@ -26,19 +26,19 @@
                JS swaps them alongside the panels. #}
             <div class="sub-tab-pager">
                 <div class="tab-pager {{ 'hidden' if tab != 'work' }}" data-tab="work">
-                    {% with pagination = work, param = 'work_page',
+                    {% with pagination = work, param = 'work_page', tab_name = 'work',
                             label = 'Work pagination' %}
                     {% include "components/_pagination.html" %}
                     {% endwith %}
                 </div>
                 <div class="tab-pager {{ 'hidden' if tab != 'sidequests' }}" data-tab="sidequests">
-                    {% with pagination = quests, param = 'quest_page',
+                    {% with pagination = quests, param = 'quest_page', tab_name = 'sidequests',
                             label = 'Side quest pagination' %}
                     {% include "components/_pagination.html" %}
                     {% endwith %}
                 </div>
                 <div class="tab-pager {{ 'hidden' if tab != 'gallery' }}" data-tab="gallery">
-                    {% with pagination = gallery, param = 'gallery_page',
+                    {% with pagination = gallery, param = 'gallery_page', tab_name = 'gallery',
                             label = 'Gallery pagination' %}
                     {% include "components/_pagination.html" %}
                     {% endwith %}
@@ -93,7 +93,7 @@
         {# The bar's pager is out of sight by here, so it repeats. Inside the
            tab panel, which is shown and hidden as a unit -- no JS involved. #}
         <div class="panel-pager">
-            {% with pagination = work, param = 'work_page',
+            {% with pagination = work, param = 'work_page', tab_name = 'work',
                     label = 'Work pagination, end of list' %}
             {% include "components/_pagination.html" %}
             {% endwith %}
@@ -127,7 +127,7 @@
         {# The bar's pager is out of sight by here, so it repeats. Inside the
            tab panel, which is shown and hidden as a unit -- no JS involved. #}
         <div class="panel-pager">
-            {% with pagination = quests, param = 'quest_page',
+            {% with pagination = quests, param = 'quest_page', tab_name = 'sidequests',
                     label = 'Side quest pagination, end of list' %}
             {% include "components/_pagination.html" %}
             {% endwith %}
@@ -151,7 +151,7 @@
         {# The bar's pager is out of sight by here, so it repeats. Inside the
            tab panel, which is shown and hidden as a unit -- no JS involved. #}
         <div class="panel-pager">
-            {% with pagination = gallery, param = 'gallery_page',
+            {% with pagination = gallery, param = 'gallery_page', tab_name = 'gallery',
                     label = 'Gallery pagination, end of list' %}
             {% include "components/_pagination.html" %}
             {% endwith %}
