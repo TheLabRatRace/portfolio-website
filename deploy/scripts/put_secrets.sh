@@ -17,14 +17,34 @@ die() { printf '\nerror: %s\n' "$1" >&2; exit 1; }
 
 [[ -f "$ENV_FILE" ]] || die "no env file at $ENV_FILE (override with ENV_FILE=...)"
 
-# Sourced in a subshell so nothing leaks into the caller's environment.
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# Read one key out of the env file without sourcing it.
+#
+# `source` is the obvious way to do this and it is wrong here. Docker Compose
+# parses .env literally, so a database URL is written unquoted -- and the query
+# string that makes the connection safe, ?sslmode=verify-full&sslrootcert=...,
+# contains an ampersand. Sourcing that backgrounds the assignment at the & and
+# silently leaves the variable unset, which reads as "the key is missing" when
+# it is right there in the file. Parsing sidesteps that, and also stops this
+# script from executing whatever else the file happens to contain.
+env_value() {
+  local key="$1" line
+  line="$(grep -m1 -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$ENV_FILE" || true)"
+  [[ -n "$line" ]] || return 0
+  line="${line#*=}"
+  # Strip one layer of surrounding quotes if present; Compose accepts both.
+  if [[ "$line" == \"*\" && ${#line} -ge 2 ]]; then
+    line="${line:1:${#line}-2}"
+  elif [[ "$line" == \'*\' && ${#line} -ge 2 ]]; then
+    line="${line:1:${#line}-2}"
+  fi
+  printf '%s' "$line"
+}
 
-: "${SECRET_KEY:?SECRET_KEY is not set in $ENV_FILE}"
-DB_URL="${RDS_DATABASE_URL:-${DATABASE_URL:-}}"
+SECRET_KEY="$(env_value SECRET_KEY)"
+[[ -n "$SECRET_KEY" ]] || die "SECRET_KEY is not set in $ENV_FILE"
+
+DB_URL="$(env_value RDS_DATABASE_URL)"
+[[ -n "$DB_URL" ]] || DB_URL="$(env_value DATABASE_URL)"
 [[ -n "$DB_URL" ]] || die "neither RDS_DATABASE_URL nor DATABASE_URL is set in $ENV_FILE"
 
 # The app refuses to boot in production on a remote database without

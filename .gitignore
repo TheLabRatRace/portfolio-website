@@ -99,3 +99,8 @@ deploy/terraform/.build/
 *.tfvars
 !*.tfvars.example
 crash.log
+
+# Saved plan files. They embed variable values and resource attributes, and
+# there is never a reason for one to be in the history.
+tfplan
+*.tfplan
