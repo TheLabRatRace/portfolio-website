@@ -135,6 +135,22 @@ class Config:
         "SESSION_COOKIE_SECURE", ""
     ).lower() in ("1", "true", "yes")
 
+    # ── Running behind a reverse proxy (CloudFront, an ALB, nginx) ──
+    # The number of proxies that prepend to X-Forwarded-For before a request
+    # reaches gunicorn. One CloudFront distribution in front of the container
+    # is 1. Zero -- the default -- means the headers are not trusted at all,
+    # which is the only safe reading while the app is directly reachable:
+    # otherwise any caller names their own client IP and their own scheme, and
+    # the log, the rate limiter and every generated https:// URL believe them.
+    TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
+
+    # On ECS the container filesystem dies with the task and nobody ever reads
+    # the rotated files, so the file handler is write cost with no reader.
+    # stdout is what the awslogs driver collects.
+    LOG_TO_STDOUT = os.environ.get("LOG_TO_STDOUT", "").lower() in (
+        "1", "true", "yes",
+    )
+
     # An admin session ends when the browser does, unless the box is ticked.
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
     REMEMBER_COOKIE_DURATION = timedelta(days=14)

@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+# Must already exist as a Route 53 public hosted zone.
+domain_name = "example.com"
+
+# "" serves the apex (example.com). "www" would serve www.example.com.
+subdomain = ""
+
+# Must match the region the RDS instance is in, or every query pays a
+# cross-region round trip.
+region = "us-east-2"
+
+# The bucket uploaded images live in. The task's IAM role is granted access to
+# it, which is what makes the access-key CSV unnecessary in production.
+assets_bucket          = "your-assets-bucket"
+assets_public_base_url = ""
+
+# Found in the RDS console under Connectivity & security. Given this, Terraform
+# opens 5432 to the task's security group so the instance can stop being
+# publicly accessible.
+rds_security_group_id = ""
+
+# true is roughly $2.20/month instead of $7.20, in exchange for AWS being
+# allowed to reclaim the task on two minutes' notice.
+use_spot = false

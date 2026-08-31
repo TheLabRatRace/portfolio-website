@@ -7,6 +7,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, request
+from flask.logging import default_handler
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import (
     assert_database_url_is_safe,
@@ -38,7 +40,9 @@ def create_app(config_name="development"):
 
     _setup_compression(app)
 
+    _setup_proxy_fix(app)
     _setup_logging(app)
+    _register_health(app)
     _register_blueprints(app)
     _register_error_handlers(app)
     _register_template_filters(app)
@@ -100,14 +104,69 @@ def _setup_compression(app):
     Compress(app)
 
 
-def _setup_logging(app):
-    log_dir = Path(app.config["LOG_DIR"])
-    log_dir.mkdir(exist_ok=True)
+def _setup_proxy_fix(app):
+    """Read the client's real IP and scheme out of the X-Forwarded-* headers.
 
+    Behind CloudFront every request arrives from an edge IP over plain http,
+    so without this the access log records the CDN instead of the visitor and
+    url_for(_external=True) emits http:// links that the browser then has to be
+    redirected off. ProxyFix trusts exactly TRUSTED_PROXY_HOPS entries from the
+    right-hand end of the header -- the ones the proxies added -- and discards
+    anything the caller sent ahead of them.
+
+    Off unless configured. A forwarded header is only evidence when something
+    trustworthy wrote it, and a directly-reachable app has no such thing.
+    """
+    hops = app.config["TRUSTED_PROXY_HOPS"]
+    if hops <= 0:
+        return
+    # x_host stays 0: CloudFront is configured to pass the viewer's Host header
+    # through untouched, so request.host is already right and X-Forwarded-Host
+    # would only be a second, spoofable source for the same answer.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=0)
+    app.logger.info("ProxyFix enabled for %d proxy hop(s)", hops)
+
+
+def _register_health(app):
+    """A liveness probe that answers without touching the database.
+
+    ECS restarts a task whose health check fails, so this endpoint is the
+    definition of "unhealthy". Querying the database from here would make an
+    RDS blip -- a failover, a maintenance window, an exhausted pool -- look
+    like a broken container, and ECS would answer a recovering database by
+    killing the tasks in a loop. So it asks the narrow question it can act on:
+    is this process still serving HTTP.
+    """
+
+    @app.route("/healthz")
+    def healthz():
+        return {"status": "ok"}, 200, {"Cache-Control": "no-store"}
+
+
+def _setup_logging(app):
     fmt = logging.Formatter(
         "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(fmt)
+    console_handler.setLevel(logging.DEBUG)
+
+    # Flask attaches its own stderr handler to app.logger, so every line was
+    # being written twice in two different formats. Harmless on a terminal;
+    # once CloudWatch is the collector it is double the ingest bill for a
+    # duplicate of a line already there.
+    app.logger.removeHandler(default_handler)
+
+    app.logger.setLevel(logging.DEBUG)
+    app.logger.addHandler(console_handler)
+
+    if app.config["LOG_TO_STDOUT"]:
+        return
+
+    log_dir = Path(app.config["LOG_DIR"])
+    log_dir.mkdir(exist_ok=True)
 
     file_handler = RotatingFileHandler(
         log_dir / "app.log",
@@ -117,14 +176,7 @@ def _setup_logging(app):
     file_handler.setFormatter(fmt)
     file_handler.setLevel(logging.INFO)
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(fmt)
-    console_handler.setLevel(logging.DEBUG)
-
-    app.logger.setLevel(logging.DEBUG)
     app.logger.addHandler(file_handler)
-    app.logger.addHandler(console_handler)
-
     logging.getLogger("werkzeug").addHandler(file_handler)
 
 
@@ -293,6 +345,11 @@ def _register_hooks(app):
 
     @app.after_request
     def log_request(response):
+        # The container health check hits /healthz every 30s for the life of
+        # the task. Logged, it buries real traffic in a file that is billed by
+        # the gigabyte once CloudWatch is the collector.
+        if request.endpoint == "healthz":
+            return response
         app.logger.info(
             "%s %s %s — %d",
             request.method,
